@@ -1,0 +1,7 @@
+{
+  "name": "party-game-tv",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "TV screen (Phaser) for 4-Way Penalty Rumble. Static assets served by the relay server; no build step."
+}

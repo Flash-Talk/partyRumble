@@ -1,0 +1,16 @@
+{
+  "name": "party-game",
+  "version": "1.0.0",
+  "private": true,
+  "description": "4-Way Penalty Rumble — a local multiplayer TV party game (TV screen + phone controllers).",
+  "scripts": {
+    "postinstall": "npm --prefix server install",
+    "install:all": "npm --prefix server install",
+    "dev": "npm --prefix server run dev",
+    "start": "npm --prefix server start",
+    "test": "npm --prefix server test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

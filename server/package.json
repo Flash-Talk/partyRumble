@@ -1,0 +1,21 @@
+{
+  "name": "party-game-server",
+  "version": "1.0.0",
+  "description": "Relay server for 4-Way Penalty Rumble (rooms, players, input relay).",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node index.js",
+    "start": "node index.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.7.5"
+  }
+}

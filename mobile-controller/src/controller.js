@@ -1,0 +1,193 @@
+'use strict';
+
+/*
+ * Mobile controller: a floating joystick + a SHOOT button.
+ * Emits the spec's `controller_input` events:
+ *   { type:'AXIS',   id:'x'|'y', value: -1.0..1.0 }
+ *   { type:'BUTTON', id:'shoot', value: true|false }
+ * Uses touchstart/touchend (never click) to avoid mobile tap delay.
+ */
+
+const socket = io({ reconnection: true });
+
+// ---- DOM ----
+const $ = (id) => document.getElementById(id);
+const joinEl = $('join');
+const controllerEl = $('controller');
+const codeField = $('codeField');
+const codeInput = $('codeInput');
+const codeBadge = $('codeBadge');
+const nameInput = $('nameInput');
+const joinBtn = $('joinBtn');
+const joinError = $('joinError');
+const statusEl = $('status');
+const slotLabel = $('slotLabel');
+const dot = $('dot');
+const joyZone = $('joyZone');
+const joyBase = $('joyBase');
+const joyKnob = $('joyKnob');
+const joyHint = $('joyHint');
+const shootBtn = $('shootBtn');
+
+// ---- state ----
+const params = new URLSearchParams(location.search);
+let roomCode = (params.get('room') || localStorage.getItem('pg_room') || '').toUpperCase();
+let playerName = localStorage.getItem('pg_name') || '';
+let wantJoin = false; // true once the user has committed to joining (drives auto-rejoin)
+let joined = false;
+
+// If the room came from the QR link, show it as a fixed badge instead of an input.
+const roomFromUrl = !!params.get('room');
+
+function initJoinScreen() {
+  nameInput.value = playerName || `Player${Math.floor(Math.random() * 90 + 10)}`;
+  if (roomFromUrl && roomCode) {
+    codeField.style.display = 'none';
+    codeBadge.style.display = '';
+    codeBadge.textContent = roomCode;
+  } else {
+    codeInput.value = roomCode;
+  }
+}
+
+// ---- networking ----
+function attemptJoin() {
+  if (!roomCode || !playerName || !socket.connected) return;
+  socket.emit('join_room', { roomCode, playerName });
+}
+
+function setStatus(text, cls) {
+  statusEl.textContent = text;
+  statusEl.className = cls || '';
+}
+
+socket.on('connect', () => {
+  setStatus(joined ? 'connected' : 'connecting…', joined ? 'live' : '');
+  if (wantJoin) attemptJoin(); // reclaim slot after a reconnect (phone unlock / wifi blip)
+});
+
+socket.on('disconnect', () => {
+  if (joined) setStatus('reconnecting…', 'warn');
+});
+
+socket.on('join_success', ({ slot, color }) => {
+  joined = true;
+  wantJoin = true;
+  localStorage.setItem('pg_name', playerName);
+  localStorage.setItem('pg_room', roomCode);
+
+  document.documentElement.style.setProperty('--slot', color);
+  dot.style.background = color;
+  dot.style.boxShadow = `0 0 10px ${color}`;
+  slotLabel.textContent = `${playerName} · ${slot.replace('player_', 'P')}`;
+  setStatus('connected', 'live');
+
+  joinEl.style.display = 'none';
+  controllerEl.style.display = 'flex';
+});
+
+socket.on('room_error', ({ message }) => {
+  wantJoin = false;
+  const msg = message || 'Could not join room';
+  if (joined) {
+    // Already playing (e.g. host dropped): surface it and return to join.
+    joined = false;
+    setStatus(msg, 'warn');
+    controllerEl.style.display = 'none';
+    joinEl.style.display = 'flex';
+  }
+  joinError.textContent = msg;
+});
+
+joinBtn.addEventListener('click', () => {
+  joinError.textContent = '';
+  playerName = (nameInput.value || '').trim() || `Player${Math.floor(Math.random() * 90 + 10)}`;
+  if (!roomFromUrl) roomCode = (codeInput.value || '').trim().toUpperCase();
+  if (!roomCode) { joinError.textContent = 'Enter a room code'; return; }
+  wantJoin = true;
+  attemptJoin();
+});
+
+// ---- axis sending (batched to one frame to limit traffic) ----
+let pendingX = 0, pendingY = 0, lastX = null, lastY = null, rafQueued = false;
+
+function queueAxis(x, y) {
+  pendingX = x; pendingY = y;
+  if (!rafQueued) { rafQueued = true; requestAnimationFrame(flushAxis); }
+}
+function flushAxis() {
+  rafQueued = false;
+  const rx = Math.round(pendingX * 100) / 100;
+  const ry = Math.round(pendingY * 100) / 100;
+  if (rx !== lastX) { socket.emit('controller_input', { type: 'AXIS', id: 'x', value: rx }); lastX = rx; }
+  if (ry !== lastY) { socket.emit('controller_input', { type: 'AXIS', id: 'y', value: ry }); lastY = ry; }
+}
+
+// ---- floating joystick ----
+const JOY_RADIUS = 90; // px; matches #joyBase half-size
+let joyTouchId = null;
+let joyBaseX = 0, joyBaseY = 0;
+
+function showJoy(x, y) {
+  joyBase.style.left = joyKnob.style.left = `${x}px`;
+  joyBase.style.top = joyKnob.style.top = `${y}px`;
+  joyBase.style.display = joyKnob.style.display = 'block';
+  joyHint.style.display = 'none';
+}
+function moveKnob(x, y) {
+  joyKnob.style.left = `${x}px`;
+  joyKnob.style.top = `${y}px`;
+}
+function hideJoy() {
+  joyBase.style.display = joyKnob.style.display = 'none';
+  joyHint.style.display = 'flex';
+  queueAxis(0, 0);
+}
+
+joyZone.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  if (joyTouchId !== null) return;
+  const t = e.changedTouches[0];
+  joyTouchId = t.identifier;
+  const r = joyZone.getBoundingClientRect();
+  joyBaseX = t.clientX - r.left;
+  joyBaseY = t.clientY - r.top;
+  showJoy(joyBaseX, joyBaseY);
+}, { passive: false });
+
+joyZone.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    if (t.identifier !== joyTouchId) continue;
+    const r = joyZone.getBoundingClientRect();
+    let dx = (t.clientX - r.left) - joyBaseX;
+    let dy = (t.clientY - r.top) - joyBaseY;
+    const mag = Math.hypot(dx, dy);
+    if (mag > JOY_RADIUS) { dx = dx / mag * JOY_RADIUS; dy = dy / mag * JOY_RADIUS; }
+    moveKnob(joyBaseX + dx, joyBaseY + dy);
+    queueAxis(dx / JOY_RADIUS, dy / JOY_RADIUS); // y+ = down (matches screen/Phaser)
+  }
+}, { passive: false });
+
+function endJoy(e) {
+  for (const t of e.changedTouches) {
+    if (t.identifier === joyTouchId) { joyTouchId = null; hideJoy(); }
+  }
+}
+joyZone.addEventListener('touchend', (e) => { e.preventDefault(); endJoy(e); }, { passive: false });
+joyZone.addEventListener('touchcancel', (e) => { e.preventDefault(); endJoy(e); }, { passive: false });
+
+// ---- shoot button ----
+function setShoot(down) {
+  shootBtn.classList.toggle('pressed', down);
+  socket.emit('controller_input', { type: 'BUTTON', id: 'shoot', value: down });
+}
+shootBtn.addEventListener('touchstart', (e) => { e.preventDefault(); setShoot(true); }, { passive: false });
+shootBtn.addEventListener('touchend', (e) => { e.preventDefault(); setShoot(false); }, { passive: false });
+shootBtn.addEventListener('touchcancel', (e) => { e.preventDefault(); setShoot(false); }, { passive: false });
+// Mouse fallback so the controller is testable on a desktop browser.
+shootBtn.addEventListener('mousedown', () => setShoot(true));
+window.addEventListener('mouseup', () => shootBtn.classList.contains('pressed') && setShoot(false));
+
+// ---- boot ----
+initJoinScreen();

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Penalty Rumble — TV</title>
+  <style>
+    html, body {
+      margin: 0; height: 100%; background: #0a0e1a; overflow: hidden;
+    }
+    #game { width: 100vw; height: 100vh; }
+    /* Center the Phaser canvas letterboxed on any TV. */
+    #game canvas { display: block; margin: 0 auto; }
+  </style>
+</head>
+<body>
+  <div id="game"></div>
+
+  <!-- socket.io client is served by the relay server -->
+  <script src="/socket.io/socket.io.js"></script>
+  <!-- vendored for offline LAN play -->
+  <script src="vendor/phaser.min.js"></script>
+  <script src="vendor/qrcode.min.js"></script>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

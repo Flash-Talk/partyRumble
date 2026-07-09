@@ -1,0 +1,15 @@
+# Render Blueprint — deploys the relay server (which also serves the TV screen
+# and the phone controller). Import this repo at https://render.com and Render
+# will read this file automatically.
+services:
+  - type: web
+    name: penalty-rumble
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
