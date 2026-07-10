@@ -35,6 +35,8 @@ let roomCode = (params.get('room') || localStorage.getItem('pg_room') || '').toU
 let playerName = localStorage.getItem('pg_name') || '';
 let wantJoin = false; // true once the user has committed to joining (drives auto-rejoin)
 let joined = false;
+let amongusActive = false; // true between amongus_role and amongus_over
+let amongusYou = null;     // latest private Among Us state
 
 // If the room came from the QR link, show it as a fixed badge instead of an input.
 const roomFromUrl = !!params.get('room');
@@ -182,12 +184,24 @@ function setShoot(down) {
   shootBtn.classList.toggle('pressed', down);
   socket.emit('controller_input', { type: 'BUTTON', id: 'shoot', value: down });
 }
-shootBtn.addEventListener('touchstart', (e) => { e.preventDefault(); setShoot(true); }, { passive: false });
-shootBtn.addEventListener('touchend', (e) => { e.preventDefault(); setShoot(false); }, { passive: false });
-shootBtn.addEventListener('touchcancel', (e) => { e.preventDefault(); setShoot(false); }, { passive: false });
+// During Among Us play the SHOOT button becomes the imposter's KILL button.
+function shootDown() {
+  if (amongusActive && amongusYou && amongusYou.phase === 'play' && amongusYou.role === 'imposter') {
+    if (amongusYou.canKill) socket.emit('amongus_action', { type: 'kill' });
+    return;
+  }
+  setShoot(true);
+}
+function shootUp() {
+  if (amongusActive && amongusYou && amongusYou.role === 'imposter') return;
+  setShoot(false);
+}
+shootBtn.addEventListener('touchstart', (e) => { e.preventDefault(); shootDown(); }, { passive: false });
+shootBtn.addEventListener('touchend', (e) => { e.preventDefault(); shootUp(); }, { passive: false });
+shootBtn.addEventListener('touchcancel', (e) => { e.preventDefault(); shootUp(); }, { passive: false });
 // Mouse fallback so the controller is testable on a desktop browser.
-shootBtn.addEventListener('mousedown', () => setShoot(true));
-window.addEventListener('mouseup', () => shootBtn.classList.contains('pressed') && setShoot(false));
+shootBtn.addEventListener('mousedown', shootDown);
+window.addEventListener('mouseup', () => { if (shootBtn.classList.contains('pressed')) setShoot(false); });
 
 // ---- UNO mode ----
 const unoEl = $('uno');
@@ -339,17 +353,24 @@ bindUno(unoUno, 'uno');
 
 // ---- Among Us ----
 const amongusRole = $('amongusRole');
+const amongusVote = $('amongusVote');
+const amongusDead = $('amongusDead');
+const avKilled = $('avKilled');
+const avTitle = $('avTitle');
+const avTimer = $('avTimer');
+const avGrid = $('avGrid');
+const avStatus = $('avStatus');
 
 socket.on('amongus_role', (r) => {
+  amongusActive = true;
   const imp = r && r.role === 'imposter';
   amongusRole.querySelector('.ar-title').textContent = imp ? 'IMPOSTER' : 'CREWMATE';
   amongusRole.querySelector('.ar-sub').textContent = imp
-    ? 'Blend in. Don’t get caught. Move with the joystick.'
+    ? 'Blend in. Kill with the button when close. Don’t get caught.'
     : 'Find the imposter. Move with the joystick.';
   amongusRole.style.background = imp ? '#3a0d0d' : '#0d2a17';
   amongusRole.querySelector('.ar-title').style.color = imp ? '#ff6b6b' : '#4ade80';
 
-  // Make sure the joystick controller is what's under the banner.
   joinEl.style.display = 'none';
   unoEl.style.display = 'none';
   controllerEl.style.display = 'flex';
@@ -357,7 +378,105 @@ socket.on('amongus_role', (r) => {
   setTimeout(() => amongusRole.classList.remove('show'), 3500);
 });
 
-socket.on('amongus_over', () => { amongusRole.classList.remove('show'); });
+socket.on('amongus_you', (you) => { amongusYou = you; renderAmongus(you); });
+
+socket.on('amongus_over', () => {
+  amongusActive = false;
+  amongusYou = null;
+  amongusRole.classList.remove('show');
+  amongusVote.classList.remove('show');
+  amongusDead.classList.remove('show');
+  shootBtn.style.display = '';
+  shootBtn.textContent = 'SHOOT';
+  shootBtn.classList.remove('killready');
+  shootBtn.style.opacity = '1';
+  controllerEl.style.display = 'flex';
+});
+
+function renderAmongus(you) {
+  if (!amongusActive) return;
+  if (you.phase === 'meeting' || you.phase === 'reveal') {
+    controllerEl.style.display = 'none';
+    amongusDead.classList.remove('show');
+    amongusVote.classList.add('show');
+    if (you.phase === 'meeting') renderMeeting(you);
+    else renderReveal(you);
+    return;
+  }
+  // play phase
+  amongusVote.classList.remove('show');
+  controllerEl.style.display = 'flex';
+  amongusDead.classList.toggle('show', you.alive === false);
+  configureKill(you);
+}
+
+function configureKill(you) {
+  if (you.role === 'imposter' && you.alive) {
+    shootBtn.style.display = '';
+    shootBtn.textContent = you.canKill ? 'KILL' : (you.killCooldown ? `KILL ${you.killCooldown}s` : 'KILL');
+    shootBtn.classList.toggle('killready', !!you.canKill);
+    shootBtn.style.opacity = you.canKill ? '1' : '0.45';
+  } else {
+    shootBtn.style.display = 'none';
+  }
+}
+
+function renderMeeting(you) {
+  avKilled.textContent = you.killed ? `${you.killed.name} was found KILLED` : 'Emergency meeting';
+  avTimer.textContent = `Vote — ${you.timeLeft || 0}s left`;
+  avTitle.textContent = 'Who is the imposter?';
+  const tally = you.tally || { counts: {}, skip: 0 };
+  const canTap = you.canVote && !you.hasVoted;
+
+  avGrid.textContent = '';
+  (you.candidates || []).forEach((c) => {
+    const b = document.createElement('button');
+    b.className = 'av-btn' + (you.myVote === c.id ? ' voted' : '');
+    b.style.background = c.color;
+    if (!canTap) b.style.opacity = '0.75';
+    const cnt = document.createElement('span');
+    cnt.className = 'av-count';
+    cnt.textContent = (tally.counts[c.id] || '') + '';
+    b.appendChild(cnt);
+    if (canTap) b.addEventListener('click', () => castVote(c.id));
+    avGrid.appendChild(b);
+  });
+
+  const skip = document.createElement('button');
+  skip.className = 'av-btn skip' + (you.myVote === 'skip' ? ' voted' : '');
+  if (!canTap) skip.style.opacity = '0.75';
+  skip.appendChild(document.createTextNode('SKIP'));
+  const sc = document.createElement('span');
+  sc.className = 'av-count';
+  sc.textContent = (tally.skip || '') + '';
+  skip.appendChild(sc);
+  if (canTap) skip.addEventListener('click', () => castVote('skip'));
+  avGrid.appendChild(skip);
+
+  avStatus.style.color = '#64d2ff';
+  avStatus.textContent = !you.canVote ? '👻 Ghosts can’t vote'
+    : you.hasVoted ? 'Vote locked in — waiting for others' : 'Tap who you suspect';
+}
+
+function castVote(target) {
+  if (amongusYou && amongusYou.hasVoted) return;
+  socket.emit('amongus_action', { type: 'vote', target });
+}
+
+function renderReveal(you) {
+  const r = you.result || {};
+  avKilled.textContent = '';
+  avTimer.textContent = '';
+  avGrid.textContent = '';
+  if (r.skipped) {
+    avTitle.textContent = 'No one was ejected';
+    avStatus.textContent = '';
+  } else {
+    avTitle.textContent = `${r.ejectedName} was ejected`;
+    avStatus.style.color = r.wasImposter ? '#4ade80' : '#ff6b6b';
+    avStatus.textContent = r.wasImposter ? '…and WAS the imposter! 🎉' : '…was NOT the imposter.';
+  }
+}
 
 // ---- boot ----
 initJoinScreen();

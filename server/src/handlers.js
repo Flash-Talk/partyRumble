@@ -94,11 +94,17 @@ function registerHandlers(io, rooms) {
       if (room) uno.handleUnoAction(io, room, socket.data.slot, payload || {});
     });
 
-    // --- Among Us: TV starts a round --------------------------------------
+    // --- Among Us: TV starts a round; players kill/vote -------------------
     socket.on('start_amongus', () => {
       if (socket.data.role !== 'tv') return;
       const room = rooms.getRoom(socket.data.roomCode);
       if (room) amongus.start(io, room);
+    });
+
+    socket.on('amongus_action', (payload) => {
+      if (socket.data.role !== 'player') return;
+      const room = rooms.getRoom(socket.data.roomCode);
+      if (room && room.amongus) amongus.handleAction(room, socket.data.slot, payload || {});
     });
 
     // --- Controller input --------------------------------------------------

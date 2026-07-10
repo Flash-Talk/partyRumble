@@ -168,6 +168,34 @@
     #amongusRole.show { display: flex; }
     #amongusRole .ar-title { font-size: 60px; font-weight: 900; letter-spacing: 3px; }
     #amongusRole .ar-sub { font-size: 20px; color: #cbd3e6; max-width: 320px; }
+
+    #shootBtn.killready { background: #ef4444; box-shadow: 0 0 40px #ef4444; }
+
+    #amongusVote {
+      position: absolute; inset: 0; z-index: 24; display: none; flex-direction: column;
+      align-items: center; gap: 10px; padding: 16px calc(16px + env(safe-area-inset-bottom));
+      background: var(--bg); overflow-y: auto; touch-action: pan-y;
+    }
+    #amongusVote.show { display: flex; }
+    #avKilled { color: #ff6b6b; font-weight: 800; font-size: 20px; min-height: 22px; text-align: center; }
+    #avTitle { font-size: 24px; font-weight: 800; text-align: center; }
+    #avTimer { color: #8b93a7; font-size: 16px; }
+    #avGrid { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 6px; }
+    .av-btn {
+      width: 92px; height: 92px; border-radius: 16px; border: 3px solid #fff; position: relative;
+      display: flex; align-items: flex-end; justify-content: center; padding-bottom: 8px;
+      font-weight: 800; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+    }
+    .av-btn.skip { background: #263056; }
+    .av-btn.voted { outline: 4px solid #4ade80; outline-offset: 2px; }
+    .av-count { position: absolute; top: 4px; right: 9px; font-size: 22px; font-weight: 900; }
+    #avStatus { margin-top: 8px; font-weight: 700; min-height: 22px; text-align: center; }
+    #amongusDead {
+      position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 12;
+      background: rgba(0,0,0,0.6); color: #ff8f8f; font-weight: 800; padding: 6px 16px;
+      border-radius: 10px; display: none;
+    }
+    #amongusDead.show { display: block; }
   </style>
 </head>
 <body>
@@ -245,6 +273,16 @@
     <div class="ar-title"></div>
     <div class="ar-sub"></div>
   </div>
+
+  <!-- Among Us meeting / voting overlay -->
+  <section id="amongusVote">
+    <div id="avKilled"></div>
+    <div id="avTitle">Who is the imposter?</div>
+    <div id="avTimer"></div>
+    <div id="avGrid"></div>
+    <div id="avStatus"></div>
+  </section>
+  <div id="amongusDead">💀 You're dead — spectating</div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="src/controller.js"></script>

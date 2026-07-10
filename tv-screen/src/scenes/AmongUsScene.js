@@ -14,6 +14,7 @@ export default class AmongUsScene extends Phaser.Scene {
   create() {
     this.cameras.main.setBackgroundColor('#0a0e1a');
     this.avatars = new Map();
+    this.overlayObjs = [];
     this.mapDrawn = false;
 
     this.add.text(DESIGN.W / 2, 8, 'AMONG US — find the imposter', {
@@ -94,6 +95,73 @@ export default class AmongUsScene extends Phaser.Scene {
     for (const [id, av] of this.avatars) {
       if (!seen.has(id)) { av.destroy(); this.avatars.delete(id); }
     }
+
+    // meeting / reveal overlays
+    this.clearOverlay();
+    if (state.phase === 'meeting' && state.meeting) this.drawMeeting(state.meeting);
+    else if (state.phase === 'reveal' && state.result) this.drawReveal(state.result);
+  }
+
+  clearOverlay() {
+    this.overlayObjs.forEach((o) => o.destroy());
+    this.overlayObjs = [];
+  }
+
+  push(o) { o.setDepth(51); this.overlayObjs.push(o); return o; }
+
+  drawMeeting(m) {
+    const dim = this.add.rectangle(DESIGN.W / 2, DESIGN.H / 2, DESIGN.W, DESIGN.H, 0x05070f, 0.82).setDepth(50);
+    this.overlayObjs.push(dim);
+    this.push(this.add.text(DESIGN.W / 2, 110, 'EMERGENCY MEETING', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '64px', fontStyle: 'bold', color: '#eab308',
+    }).setOrigin(0.5));
+    if (m.killed) {
+      this.push(this.add.text(DESIGN.W / 2, 200, `${m.killed.name} was found KILLED`, {
+        fontFamily: 'system-ui, sans-serif', fontSize: '42px', fontStyle: 'bold', color: '#ff6b6b',
+      }).setOrigin(0.5));
+    }
+    this.push(this.add.text(DESIGN.W / 2, 290, `Who is the imposter?     ${m.timeLeft}s`, {
+      fontFamily: 'system-ui, sans-serif', fontSize: '36px', color: '#cbd3e6',
+    }).setOrigin(0.5));
+
+    const cands = m.candidates || [];
+    const n = cands.length;
+    const spacing = Math.min(230, 1500 / Math.max(1, n));
+    const startX = DESIGN.W / 2 - ((n - 1) * spacing) / 2;
+    const y = 560;
+    cands.forEach((c, i) => {
+      const x = startX + i * spacing;
+      this.push(this.add.circle(x, y, 48, hexToNum(c.color)).setStrokeStyle(4, 0xffffff));
+      const votes = (m.tally && m.tally.counts && m.tally.counts[c.id]) || 0;
+      this.push(this.add.text(x, y + 72, `${votes} vote${votes === 1 ? '' : 's'}`, {
+        fontFamily: 'system-ui, sans-serif', fontSize: '28px', color: '#eef1f7',
+      }).setOrigin(0.5));
+    });
+    this.push(this.add.text(DESIGN.W / 2, 770, `Skip: ${(m.tally && m.tally.skip) || 0}`, {
+      fontFamily: 'system-ui, sans-serif', fontSize: '30px', color: '#8b93a7',
+    }).setOrigin(0.5));
+    this.push(this.add.text(DESIGN.W / 2, 840, 'Vote on your phone', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '28px', color: '#8b93a7',
+    }).setOrigin(0.5));
+  }
+
+  drawReveal(r) {
+    const dim = this.add.rectangle(DESIGN.W / 2, DESIGN.H / 2, DESIGN.W, DESIGN.H, 0x05070f, 0.82).setDepth(50);
+    this.overlayObjs.push(dim);
+    if (r.skipped) {
+      this.push(this.add.text(DESIGN.W / 2, DESIGN.H / 2, 'No one was ejected', {
+        fontFamily: 'system-ui, sans-serif', fontSize: '60px', fontStyle: 'bold', color: '#cbd3e6',
+      }).setOrigin(0.5));
+      return;
+    }
+    this.push(this.add.circle(DESIGN.W / 2, 430, 60, hexToNum(r.ejectedColor)).setStrokeStyle(5, 0xffffff));
+    this.push(this.add.text(DESIGN.W / 2, 540, `${r.ejectedName} was ejected`, {
+      fontFamily: 'system-ui, sans-serif', fontSize: '58px', fontStyle: 'bold', color: '#eef1f7',
+    }).setOrigin(0.5));
+    this.push(this.add.text(DESIGN.W / 2, 620, r.wasImposter ? 'They WERE the imposter! 🎉' : 'They were NOT the imposter.', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '40px', fontStyle: 'bold',
+      color: r.wasImposter ? '#4ade80' : '#ff6b6b',
+    }).setOrigin(0.5));
   }
 
   showOver(data) {

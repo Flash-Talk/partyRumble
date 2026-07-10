@@ -1,14 +1,19 @@
 'use strict';
 
-// Authoritative Among Us simulation (Phase 1: movement + roles). The server owns
-// this so the imposter's identity never reaches the shared TV. publicState() is
-// anonymized (color + position only; a name appears only once a player is dead;
-// roles are NEVER exposed).
+// Authoritative Among Us simulation (Phases 1-3: movement, hidden roles,
+// proximity kill + death reveal, instant meeting, live voting, win conditions).
+// The server owns this so the imposter's identity never reaches the shared TV.
+// publicState() is anonymized (color + position; a name appears only once a
+// player is dead/ejected; roles are NEVER serialized).
 
 const { MAP } = require('./map');
 
-const SPEED = 330;   // px/s in map space
+const SPEED = 330;            // px/s in map space
 const RADIUS = 26;
+const KILL_RANGE = 100;       // imposter must be this close to kill
+const KILL_COOLDOWN_MS = 15000;
+const MEETING_MS = 30000;     // fallback if not everyone votes
+const REVEAL_MS = 4500;       // show the ejection result
 
 function resolveCircleRect(p, r, rect) {
   const cx = Math.max(rect.x, Math.min(p.x, rect.x + rect.w));
@@ -17,7 +22,7 @@ function resolveCircleRect(p, r, rect) {
   const dy = p.y - cy;
   const d = Math.hypot(dx, dy);
   if (d >= r) return;
-  if (d === 0) { // center inside the rect — push out the nearest side
+  if (d === 0) {
     const left = p.x - rect.x, right = rect.x + rect.w - p.x;
     const top = p.y - rect.y, bottom = rect.y + rect.h - p.y;
     const m = Math.min(left, right, top, bottom);
@@ -33,16 +38,21 @@ function resolveCircleRect(p, r, rect) {
 }
 
 class AmongUsGame {
-  /** @param {string[]} slots  @param {{[slot]:{name,color}}} meta */
   constructor(slots, meta = {}, opts = {}) {
     this.slots = slots.slice();
     this.rng = opts.rng || Math.random;
     this.map = MAP;
     this.radius = RADIUS;
-    this.phase = 'play'; // play | meeting | over
+    this.phase = 'play';      // play | meeting | reveal | over
     this.winner = null;
     this.imposter = null;
     this.players = {};
+    this.votes = {};
+    this.result = null;
+    this.killedThisMeeting = null;
+    this.killReadyAt = 0;
+    this.meetingEndAt = 0;
+    this.revealEndAt = 0;
     this._assign(meta);
   }
 
@@ -52,20 +62,40 @@ class AmongUsGame {
       const sp = this.map.spawns[i % this.map.spawns.length];
       const m = meta[slot] || {};
       this.players[slot] = {
-        slot,
-        name: m.name || slot,
-        color: m.color || '#cccccc',
-        x: sp.x, y: sp.y,
-        input: { x: 0, y: 0 },
-        alive: true,
-        role: slot === this.imposter ? 'imposter' : 'crew',
+        slot, name: m.name || slot, color: m.color || '#cccccc',
+        x: sp.x, y: sp.y, input: { x: 0, y: 0 },
+        alive: true, role: slot === this.imposter ? 'imposter' : 'crew',
       };
     });
   }
 
+  // ---- helpers ----
+  aliveSlots() { return this.slots.filter((s) => this.players[s].alive); }
+  aliveCrew() { return this.aliveSlots().filter((s) => this.players[s].role === 'crew').length; }
+  aliveImp() { return this.aliveSlots().filter((s) => this.players[s].role === 'imposter').length; }
+
+  _nearestCrew(slot) {
+    const me = this.players[slot];
+    let best = null, bd = Infinity;
+    for (const s of this.slots) {
+      const p = this.players[s];
+      if (s === slot || !p.alive || p.role === 'imposter') continue;
+      const d = Math.hypot(p.x - me.x, p.y - me.y);
+      if (d < bd) { bd = d; best = s; }
+    }
+    return best && bd <= KILL_RANGE ? best : null;
+  }
+
+  canKill(slot, now) {
+    const p = this.players[slot];
+    return this.phase === 'play' && p && p.alive && p.role === 'imposter'
+      && now >= this.killReadyAt && !!this._nearestCrew(slot);
+  }
+
+  // ---- movement ----
   setInputAxis(slot, id, value) {
     const p = this.players[slot];
-    if (!p || !p.alive) return;
+    if (!p || !p.alive || this.phase !== 'play') return;
     if (id === 'x') p.input.x = value;
     else if (id === 'y') p.input.y = value;
   }
@@ -86,33 +116,143 @@ class AmongUsGame {
     }
   }
 
-  publicState() {
+  // ---- actions ----
+  tryKill(slot, now) {
+    if (!this.canKill(slot, now)) return { ok: false };
+    const victim = this._nearestCrew(slot);
+    if (!victim) return { ok: false };
+    this.players[victim].alive = false;
+    this.players[victim].input = { x: 0, y: 0 };
+    this._startMeeting(now, victim);
+    return { ok: true, victim };
+  }
+
+  _startMeeting(now, killedSlot) {
+    this.phase = 'meeting';
+    this.meetingEndAt = now + MEETING_MS;
+    this.votes = {};
+    this.killedThisMeeting = killedSlot || null;
+    for (const s of this.slots) this.players[s].input = { x: 0, y: 0 };
+  }
+
+  vote(slot, target) {
+    if (this.phase !== 'meeting') return { ok: false };
+    const p = this.players[slot];
+    if (!p || !p.alive || this.votes[slot] !== undefined) return { ok: false };
+    if (target !== 'skip' && !(this.players[target] && this.players[target].alive)) return { ok: false };
+    this.votes[slot] = target;
+    return { ok: true };
+  }
+
+  allVoted() { return this.aliveSlots().every((s) => this.votes[s] !== undefined); }
+  shouldResolve(now) { return this.phase === 'meeting' && (this.allVoted() || now >= this.meetingEndAt); }
+  revealDone(now) { return this.phase === 'reveal' && now >= this.revealEndAt; }
+
+  _tally() {
+    const counts = {};
+    let skip = 0;
+    for (const s of this.aliveSlots()) {
+      const t = this.votes[s];
+      if (t === undefined) continue;
+      if (t === 'skip') skip += 1;
+      else counts[t] = (counts[t] || 0) + 1;
+    }
+    return { counts, skip };
+  }
+
+  resolveMeeting(now) {
+    const { counts, skip } = this._tally();
+    let top = null, topN = 0, tie = false;
+    for (const [id, n] of Object.entries(counts)) {
+      if (n > topN) { top = id; topN = n; tie = false; }
+      else if (n === topN) tie = true;
+    }
+    let ejected = null;
+    if (top && !tie && topN > skip) { ejected = top; this.players[top].alive = false; }
+
+    this.result = {
+      ejected,
+      ejectedName: ejected ? this.players[ejected].name : null,
+      ejectedColor: ejected ? this.players[ejected].color : null,
+      wasImposter: ejected ? this.players[ejected].role === 'imposter' : false,
+      skipped: !ejected,
+    };
+
+    const winner = this._winner();
+    if (winner) { this.result.winner = winner; this.winner = winner; this.phase = 'over'; }
+    else { this.phase = 'reveal'; this.revealEndAt = now + REVEAL_MS; }
+    return this.result;
+  }
+
+  _winner() {
+    if (this.aliveImp() === 0) return 'crew';
+    if (this.aliveImp() >= this.aliveCrew()) return 'imposter';
+    return null;
+  }
+
+  startPlayRound(now) {
+    this.phase = 'play';
+    this.killReadyAt = now + KILL_COOLDOWN_MS;
+    this.result = null;
+    this.killedThisMeeting = null;
+    this.votes = {};
+  }
+
+  // ---- state for clients ----
+  publicState(now) {
     return {
       phase: this.phase,
       winner: this.winner,
       players: this.slots.map((s) => {
         const p = this.players[s];
         return {
-          id: s,
-          color: p.color,
-          x: Math.round(p.x),
-          y: Math.round(p.y),
-          alive: p.alive,
-          name: p.alive ? null : p.name, // revealed only on death
+          id: s, color: p.color, x: Math.round(p.x), y: Math.round(p.y),
+          alive: p.alive, name: p.alive ? null : p.name,
         };
       }),
+      meeting: this.phase === 'meeting' ? {
+        tally: this._tally(),
+        candidates: this.aliveSlots().map((s) => ({ id: s, color: this.players[s].color })),
+        killed: this.killedThisMeeting
+          ? { name: this.players[this.killedThisMeeting].name, color: this.players[this.killedThisMeeting].color }
+          : null,
+        timeLeft: Math.max(0, Math.ceil((this.meetingEndAt - now) / 1000)),
+      } : null,
+      result: (this.phase === 'reveal' || this.phase === 'over') ? this.result : null,
     };
+  }
+
+  privateFor(slot, now) {
+    const p = this.players[slot];
+    if (!p) return { alive: false, role: 'crew', phase: this.phase };
+    const out = { alive: p.alive, role: p.role, phase: this.phase };
+    if (this.phase === 'play') {
+      out.canKill = this.canKill(slot, now);
+      out.killCooldown = Math.max(0, Math.ceil((this.killReadyAt - now) / 1000));
+    } else if (this.phase === 'meeting') {
+      out.candidates = this.aliveSlots().map((s) => ({ id: s, color: this.players[s].color }));
+      out.canVote = p.alive;
+      out.hasVoted = this.votes[slot] !== undefined;
+      out.myVote = this.votes[slot] ?? null;
+      out.tally = this._tally();
+      out.killed = this.killedThisMeeting
+        ? { name: this.players[this.killedThisMeeting].name, color: this.players[this.killedThisMeeting].color } : null;
+      out.timeLeft = Math.max(0, Math.ceil((this.meetingEndAt - now) / 1000));
+    } else if (this.phase === 'reveal') {
+      out.result = this.result;
+    }
+    return out;
   }
 
   roleFor(slot) {
     const p = this.players[slot];
-    if (!p) return null;
-    return { role: p.role, color: p.color, id: slot };
+    return p ? { role: p.role, color: p.color, id: slot } : null;
   }
 
   removePlayer(slot) {
     delete this.players[slot];
     this.slots = this.slots.filter((s) => s !== slot);
+    delete this.votes[slot];
   }
 }
 
