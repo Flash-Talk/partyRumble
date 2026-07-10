@@ -109,9 +109,12 @@
     }
     #unoTurn { font-size: 20px; font-weight: 800; }
     #unoTurn.your-turn { color: #4ade80; }
+    #unoTurn.waiting-turn { color: #8b93a7; }
     #unoPile { margin-left: auto; display: flex; align-items: center; gap: 10px; }
     #unoColor { font-weight: 800; text-transform: uppercase; font-size: 14px; }
-    #unoMsg { min-height: 20px; text-align: center; color: #ff6b6b; font-size: 14px; padding: 2px; }
+    #unoMsg { min-height: 22px; text-align: center; font-size: 15px; font-weight: 700; padding: 3px; color: #8b93a7; }
+    #unoMsg.hint { color: #64d2ff; }
+    #unoMsg.err { color: #ff6b6b; }
 
     .card {
       display: flex; align-items: center; justify-content: center;
@@ -138,6 +141,7 @@
     }
     .ubtn:disabled { opacity: 0.4; }
     .ubtn.uno { background: #ef4444; color: #fff; }
+    .ubtn.accent { background: #f59e0b; color: #1a1206; box-shadow: 0 0 0 3px rgba(245,158,11,0.45); }
     .ubtn:active:not(:disabled) { transform: translateY(1px); filter: brightness(0.95); }
 
     #colorPicker {

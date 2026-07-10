@@ -214,7 +214,8 @@ socket.on('uno_hand', (h) => enterUno(h));
 socket.on('uno_over', (d) => exitUno(d));
 socket.on('uno_error', ({ message }) => {
   unoMsg.textContent = message || '';
-  setTimeout(() => { if (unoMsg.textContent === message) unoMsg.textContent = ''; }, 1500);
+  unoMsg.className = 'err';
+  setTimeout(() => { if (unoMsg.textContent === message) { unoMsg.textContent = ''; unoMsg.className = ''; } }, 1500);
 });
 
 function enterUno(h) {
@@ -243,16 +244,22 @@ function styleCard(el, card) {
 
 function renderUno(h) {
   const st = h.state;
-  unoTurn.textContent = h.yourTurn ? 'YOUR TURN' : `${turnName(st)}'s turn`;
-  unoTurn.className = h.yourTurn ? 'your-turn' : '';
+  const waiting = !h.yourTurn;
+  const pending = st.pendingDraw > 0;
+  const stackName = st.pendingType === 'draw4' ? 'Draw Four' : 'Draw Two';
+
+  unoEl.classList.toggle('waiting', waiting);
+  unoTurn.textContent = waiting ? `Waiting for ${turnName(st)}…` : 'YOUR TURN';
+  unoTurn.className = waiting ? 'waiting-turn' : 'your-turn';
 
   const top = st.topCard;
   unoTopCard.textContent = unoSymbol(top.kind);
   unoTopCard.classList.remove('wildcard');
   unoTopCard.style.background = unoColorHex(top.color === 'wild' ? st.currentColor : top.color);
-  unoColor.textContent = st.pendingDraw > 0 ? `+${st.pendingDraw}!` : st.currentColor;
-  unoColor.style.color = unoColorHex(st.currentColor);
+  unoColor.textContent = pending ? `STACK +${st.pendingDraw}` : st.currentColor;
+  unoColor.style.color = pending ? '#ff6b6b' : unoColorHex(st.currentColor);
 
+  // Dim every card that can't be tapped — including the whole hand when waiting.
   const playable = new Set(h.playableIds);
   unoHand.innerHTML = '';
   h.cards.forEach((c) => {
@@ -263,15 +270,34 @@ function renderUno(h) {
       el.classList.add('legal');
       el.addEventListener('touchstart', (e) => { e.preventDefault(); onCardTap(c); }, { passive: false });
       el.addEventListener('click', () => onCardTap(c));
-    } else if (h.yourTurn) {
+    } else {
       el.classList.add('illegal');
     }
     unoHand.appendChild(el);
   });
 
+  // Action buttons: hide DRAW when it isn't your turn; make it obvious when
+  // drawing is the required move (and label the stacked penalty).
+  unoDraw.style.display = h.yourTurn ? '' : 'none';
   unoDraw.disabled = !h.canDraw;
+  unoDraw.textContent = pending ? `TAKE +${st.pendingDraw}` : 'DRAW';
+  unoDraw.classList.toggle('accent', h.yourTurn && h.playableIds.length === 0);
   unoPass.style.display = h.canPass ? '' : 'none';
   unoUno.style.display = h.canCallUno ? '' : 'none';
+
+  // One-line guidance so a legal state never looks stuck.
+  let hint = '';
+  if (!waiting) {
+    if (pending) {
+      hint = h.playableIds.length
+        ? `Stack a ${stackName} or tap TAKE +${st.pendingDraw}`
+        : `No ${stackName} to stack — tap TAKE +${st.pendingDraw}`;
+    } else if (h.playableIds.length === 0 && h.canDraw) {
+      hint = 'No playable card — tap DRAW';
+    }
+  }
+  unoMsg.textContent = hint;
+  unoMsg.className = hint ? 'hint' : '';
 }
 
 function onCardTap(card) {
