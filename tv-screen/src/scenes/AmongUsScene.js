@@ -82,6 +82,16 @@ export default class AmongUsScene extends Phaser.Scene {
       g.lineStyle(3, 0x64d2ff, 0.7);
       g.strokeCircle(this.mx + t.x, this.my + t.y, 16);
     }
+    // vents (grated covers)
+    for (const v of map.vents || []) {
+      const vx = this.mx + v.x, vy = this.my + v.y;
+      g.fillStyle(0x241826, 1);
+      g.fillRoundedRect(vx - 24, vy - 18, 48, 36, 7);
+      g.lineStyle(3, 0x6b3a5a, 1);
+      g.strokeRoundedRect(vx - 24, vy - 18, 48, 36, 7);
+      g.lineStyle(2, 0x8a4a6a, 1);
+      for (let k = -1; k <= 1; k++) g.lineBetween(vx - 15, vy + k * 8, vx + 15, vy + k * 8);
+    }
   }
 
   makeAvatar(color) {

@@ -80,6 +80,9 @@ function handleAction(room, slot, payload = {}) {
   if (payload.type === 'kill') game.tryKill(slot, now);
   else if (payload.type === 'vote') game.vote(slot, payload.target);
   else if (payload.type === 'task') game.completeTask(slot, payload.stationId);
+  else if (payload.type === 'vent') game.enterVent(slot);
+  else if (payload.type === 'vent_move') game.moveVent(slot, payload.ventId);
+  else if (payload.type === 'vent_exit') game.exitVent(slot);
 }
 
 function resendRole(io, room, slot) {

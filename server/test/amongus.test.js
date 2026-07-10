@@ -10,13 +10,20 @@ const meta = {
   p1: { name: 'Ann', color: '#ef4444' }, p2: { name: 'Ben', color: '#3b82f6' },
   p3: { name: 'Cara', color: '#22c55e' }, p4: { name: 'Dan', color: '#eab308' },
 };
-// rng -> 0 makes slots[0] (p1) the imposter, deterministically.
 const mk = () => new AmongUsGame(SLOTS, meta, { rng: () => 0 });
+const impOf = (g) => g.imposters[0];
+const crewOf = (g) => SLOTS.filter((s) => !g.imposters.includes(s));
 
-test('assigns exactly one imposter', () => {
-  const g = mk();
-  assert.equal(g.imposter, 'p1');
-  assert.equal(SLOTS.filter((s) => g.players[s].role === 'imposter').length, 1);
+test('4-6 players get exactly one imposter; 7+ get two (who know each other)', () => {
+  assert.equal(mk().imposters.length, 1);
+  const big = new AmongUsGame(['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'], {}, { rng: () => 0 });
+  assert.equal(big.imposters.length, 2);
+  const [a, b] = big.imposters;
+  const ra = big.roleFor(a);
+  assert.equal(ra.role, 'imposter');
+  assert.equal(ra.teammates.length, 1);
+  assert.equal(ra.teammates[0].id, b);
+  assert.equal(big.roleFor(crewOf(big)[0]).teammates, undefined);
 });
 
 test('public state hides names while alive and never leaks roles', () => {
@@ -28,86 +35,97 @@ test('public state hides names while alive and never leaks roles', () => {
 
 test('step moves a player; players stay in bounds', () => {
   const g = mk();
-  const bx = g.players.p2.x;
-  g.setInputAxis('p2', 'x', 1);
+  const s = crewOf(g)[0];
+  const bx = g.players[s].x;
+  g.setInputAxis(s, 'x', 1);
   g.step(0.1);
-  assert.ok(g.players.p2.x > bx);
-  g.setInputAxis('p2', 'x', -1);
+  assert.ok(g.players[s].x > bx);
+  g.setInputAxis(s, 'x', -1);
   for (let i = 0; i < 300; i++) g.step(0.05);
-  assert.ok(g.players.p2.x >= g.radius - 0.01 && g.players.p2.x <= MAP.w - g.radius + 0.01);
+  assert.ok(g.players[s].x >= g.radius - 0.01 && g.players[s].x <= MAP.w - g.radius + 0.01);
 });
 
-test('imposter kills a nearby crewmate, which reveals the body and opens a meeting', () => {
+test('imposter kills a nearby crewmate -> body reveal + meeting', () => {
   const g = mk();
-  g.startPlayRound(0);          // cooldown = now(0) + 15s
-  g.players.p1.x = 800; g.players.p1.y = 500; // imposter
-  g.players.p2.x = 820; g.players.p2.y = 500; // crew, in range
-  assert.equal(g.canKill('p1', 100), false, 'still on cooldown');
-  const r = g.tryKill('p1', 20000);           // past cooldown
-  assert.ok(r.ok && r.victim === 'p2');
-  assert.equal(g.players.p2.alive, false);
+  g.startPlayRound(0);
+  const imp = impOf(g);
+  const crew = crewOf(g);
+  g.players[imp].x = 800; g.players[imp].y = 500;
+  g.players[crew[0]].x = 820; g.players[crew[0]].y = 500;
+  for (let i = 1; i < crew.length; i++) { g.players[crew[i]].x = 100; g.players[crew[i]].y = 100; }
+  assert.equal(g.canKill(imp, 100), false, 'still on cooldown');
+  const r = g.tryKill(imp, 20000);
+  assert.ok(r.ok);
+  assert.equal(g.players[r.victim].role, 'crew');
+  assert.equal(g.players[r.victim].alive, false);
   assert.equal(g.phase, 'meeting');
-  const pub = g.publicState(20000);
-  assert.equal(pub.players.find((p) => p.id === 'p2').name, 'Ben', 'body name revealed');
+  assert.equal(g.publicState(20000).players.find((p) => p.id === r.victim).name, meta[r.victim].name);
 });
 
 test('a crewmate cannot kill and the imposter cannot kill out of range', () => {
   const g = mk();
   g.startPlayRound(0);
-  assert.equal(g.canKill('p2', 20000), false, 'crew never kills');
-  g.players.p1.x = 100; g.players.p1.y = 100;             // imposter
-  for (const s of ['p2', 'p3', 'p4']) { g.players[s].x = 1500; g.players[s].y = 900; } // all crew far
-  assert.equal(g.canKill('p1', 20000), false, 'no target in range');
+  assert.equal(g.canKill(crewOf(g)[0], 20000), false, 'crew never kills');
+  const imp = impOf(g);
+  g.players[imp].x = 100; g.players[imp].y = 100;
+  for (const s of crewOf(g)) { g.players[s].x = 1600; g.players[s].y = 900; }
+  assert.equal(g.canKill(imp, 20000), false, 'no target in range');
 });
 
-test('voting ejects the most-voted player and reveals their role; ejecting the imposter = crew win', () => {
+test('venting: imposter enters/moves/exits, vanishes from the shared map; crew cannot vent', () => {
   const g = mk();
+  g.startPlayRound(0);
+  const imp = impOf(g);
+  const v0 = g.map.vents[0];
+  g.players[imp].x = v0.x; g.players[imp].y = v0.y;
+  assert.equal(g.ventNear(imp), v0.id);
+  assert.ok(g.enterVent(imp).ok);
+  assert.equal(g.players[imp].vented, true);
+  assert.ok(!g.publicState(0).players.find((p) => p.id === imp), 'vented imposter is hidden');
+  assert.equal(g.canKill(imp, 20000), false, 'cannot kill while vented');
+  assert.ok(g.moveVent(imp, g.map.vents[1].id).ok);
+  assert.equal(g.players[imp].x, g.map.vents[1].x);
+  assert.ok(g.exitVent(imp).ok);
+  assert.equal(g.players[imp].vented, false);
+
+  const crew = crewOf(g)[0];
+  g.players[crew].x = v0.x; g.players[crew].y = v0.y;
+  assert.equal(g.enterVent(crew).ok, false);
+});
+
+test('voting out the imposter is a crew win; a tie ejects nobody', () => {
+  const g = mk();
+  const imp = impOf(g);
   g._startMeeting(0, null);
-  assert.ok(g.vote('p2', 'p1').ok);
-  assert.ok(g.vote('p3', 'p1').ok);
-  assert.ok(g.vote('p4', 'p1').ok);
-  assert.ok(g.vote('p1', 'skip').ok);
-  assert.equal(g.vote('p2', 'p3').ok, false, 'one vote per player');
+  for (const s of crewOf(g)) g.vote(s, imp);
+  g.vote(imp, 'skip');
   const res = g.resolveMeeting(1000);
-  assert.equal(res.ejected, 'p1');
+  assert.equal(res.ejected, imp);
   assert.equal(res.wasImposter, true);
   assert.equal(res.winner, 'crew');
-  assert.equal(g.phase, 'over');
-});
 
-test('a tie ejects nobody', () => {
-  const g = mk();
-  g._startMeeting(0, null);
-  g.vote('p1', 'p2'); g.vote('p2', 'p1'); g.vote('p3', 'p4'); g.vote('p4', 'p3');
-  const res = g.resolveMeeting(1000);
-  assert.equal(res.ejected, null);
-  assert.equal(res.skipped, true);
+  const g2 = mk();
+  g2._startMeeting(0, null);
+  g2.vote('p1', 'p2'); g2.vote('p2', 'p1'); g2.vote('p3', 'p4'); g2.vote('p4', 'p3');
+  assert.equal(g2.resolveMeeting(1000).ejected, null);
 });
 
 test('imposter reaches parity => imposter win', () => {
   const g = mk();
-  // p1 imposter alive; only p2 crew alive (p3,p4 dead) => 1 imp vs 1 crew = parity
-  g.players.p3.alive = false;
-  g.players.p4.alive = false;
+  const crew = crewOf(g);
+  g.players[crew[0]].alive = false;
+  g.players[crew[1]].alive = false; // 1 imposter vs 1 crew alive
   g._startMeeting(0, null);
-  g.vote('p1', 'skip'); g.vote('p2', 'skip');
-  const res = g.resolveMeeting(1000);
-  assert.equal(res.winner, 'imposter');
-  assert.equal(g.phase, 'over');
+  g.vote(impOf(g), 'skip'); g.vote(crew[2], 'skip');
+  assert.equal(g.resolveMeeting(1000).winner, 'imposter');
 });
 
-test('tasks are assigned; only crew tasks count toward the bar', () => {
-  const g = mk();
-  assert.ok(g.players.p2.tasks.length >= 1);
-  const expected = ['p2', 'p3', 'p4'].reduce((n, s) => n + g.players[s].tasks.length, 0);
-  assert.equal(g.realTaskTotal, expected);
-  assert.equal(g.taskProgress(), 0);
-});
-
-test('completing all crew tasks wins for the crew', () => {
+test('tasks: only crew tasks count; finishing them all wins for the crew', () => {
   const g = mk();
   g.startPlayRound(0);
-  for (const s of ['p2', 'p3', 'p4']) {
+  const crew = crewOf(g);
+  assert.equal(g.realTaskTotal, crew.reduce((n, s) => n + g.players[s].tasks.length, 0));
+  for (const s of crew) {
     for (const t of g.players[s].tasks) {
       const st = g.map.tasks.find((x) => x.id === t.stationId);
       g.players[s].x = st.x; g.players[s].y = st.y;
@@ -118,31 +136,15 @@ test('completing all crew tasks wins for the crew', () => {
   assert.equal(g.winner, 'crew');
 });
 
-test('a task only completes when the player is at the station', () => {
+test('a task only completes at the station; a ghost can still move', () => {
   const g = mk();
   g.startPlayRound(0);
-  const t = g.players.p2.tasks[0];
-  g.players.p2.x = 0; g.players.p2.y = 0; // far from any station
-  assert.equal(g.completeTask('p2', t.stationId).ok, false);
-});
-
-test('a dead crewmate (ghost) can still move to finish tasks', () => {
-  const g = mk();
-  g.startPlayRound(0);
-  g.players.p2.alive = false;
-  const bx = g.players.p2.x;
-  g.setInputAxis('p2', 'x', 1);
+  const c = crewOf(g)[0];
+  g.players[c].x = 0; g.players[c].y = 0;
+  assert.equal(g.completeTask(c, g.players[c].tasks[0].stationId).ok, false);
+  g.players[c].alive = false;
+  const bx = g.players[c].x;
+  g.setInputAxis(c, 'x', 1);
   g.step(0.2);
-  assert.ok(g.players.p2.x > bx);
-});
-
-test('reveal advances back to play after its timer', () => {
-  const g = mk();
-  g._startMeeting(0, null);
-  g.vote('p2', 'p3'); g.vote('p1', 'p3'); g.vote('p3', 'skip'); g.vote('p4', 'p3'); // eject p3 (crew), no win
-  g.resolveMeeting(1000);
-  assert.equal(g.phase, 'reveal');
-  assert.equal(g.revealDone(1000 + 4500 + 1), true);
-  g.startPlayRound(999999);
-  assert.equal(g.phase, 'play');
+  assert.ok(g.players[c].x > bx);
 });

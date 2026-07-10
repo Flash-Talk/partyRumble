@@ -189,6 +189,7 @@ function shootDown() {
   if (amongusActive && amongusYou && amongusYou.phase === 'play') {
     const mode = shootBtn.dataset.amode;
     if (mode === 'kill') { if (amongusYou.canKill) socket.emit('amongus_action', { type: 'kill' }); return; }
+    if (mode === 'vent') { if (amongusYou.ventHere) socket.emit('amongus_action', { type: 'vent' }); return; }
     if (mode === 'task') { if (amongusYou.taskHere) openTask(amongusYou.taskHere); return; }
     return;
   }
@@ -362,6 +363,11 @@ const amongusTask = $('amongusTask');
 const atTitle = $('atTitle');
 const atArea = $('atArea');
 const atClose = $('atClose');
+const amongusVent = $('amongusVent');
+const avnGrid = $('avnGrid');
+const avnExit = $('avnExit');
+avnExit.addEventListener('click', () => socket.emit('amongus_action', { type: 'vent_exit' }));
+avnExit.addEventListener('touchstart', (e) => { e.preventDefault(); socket.emit('amongus_action', { type: 'vent_exit' }); }, { passive: false });
 const avKilled = $('avKilled');
 const avTitle = $('avTitle');
 const avTimer = $('avTimer');
@@ -374,9 +380,22 @@ socket.on('amongus_role', (r) => {
   amongusActive = true;
   const imp = r && r.role === 'imposter';
   amongusRole.querySelector('.ar-title').textContent = imp ? 'IMPOSTER' : 'CREWMATE';
-  amongusRole.querySelector('.ar-sub').textContent = imp
-    ? 'Blend in. Kill with the button when close. Don’t get caught.'
-    : 'Find the imposter. Move with the joystick.';
+  const sub = amongusRole.querySelector('.ar-sub');
+  sub.textContent = imp
+    ? 'Kill up close, vent to escape, blend in.'
+    : 'Find the imposter. Move + do tasks with the joystick.';
+  if (imp && r.teammates && r.teammates.length) {
+    sub.appendChild(document.createElement('br'));
+    sub.appendChild(document.createTextNode('Your team: '));
+    r.teammates.forEach((tm) => {
+      const dot = document.createElement('span');
+      dot.textContent = '●';
+      dot.style.color = tm.color;
+      dot.style.fontSize = '30px';
+      dot.style.verticalAlign = 'middle';
+      sub.appendChild(dot);
+    });
+  }
   amongusRole.style.background = imp ? '#3a0d0d' : '#0d2a17';
   amongusRole.querySelector('.ar-title').style.color = imp ? '#ff6b6b' : '#4ade80';
 
@@ -395,11 +414,12 @@ socket.on('amongus_over', () => {
   amongusRole.classList.remove('show');
   amongusVote.classList.remove('show');
   amongusDead.classList.remove('show');
+  amongusVent.classList.remove('show');
   amongusTasks.style.display = 'none';
   closeTask();
   shootBtn.style.display = '';
   shootBtn.textContent = 'SHOOT';
-  shootBtn.classList.remove('killready', 'taskmode');
+  shootBtn.classList.remove('killready', 'taskmode', 'ventmode');
   shootBtn.style.opacity = '1';
   controllerEl.style.display = 'flex';
 });
@@ -411,6 +431,7 @@ function renderAmongus(you) {
     controllerEl.style.display = 'none';
     amongusDead.classList.remove('show');
     amongusTasks.style.display = 'none';
+    amongusVent.classList.remove('show');
     amongusVote.classList.add('show');
     if (you.phase === 'meeting') renderMeeting(you);
     else renderReveal(you);
@@ -418,6 +439,15 @@ function renderAmongus(you) {
   }
   // play phase
   amongusVote.classList.remove('show');
+
+  if (you.vented) { // imposter in the vents
+    controllerEl.style.display = 'none';
+    amongusTasks.style.display = 'none';
+    amongusVent.classList.add('show');
+    renderVent(you);
+    return;
+  }
+  amongusVent.classList.remove('show');
   controllerEl.style.display = 'flex';
   amongusDead.classList.toggle('show', you.alive === false);
   amongusTasks.style.display = '';
@@ -426,10 +456,13 @@ function renderAmongus(you) {
 }
 
 function configureAction(you) {
-  shootBtn.classList.remove('killready', 'taskmode');
+  shootBtn.classList.remove('killready', 'taskmode', 'ventmode');
   if (you.role === 'imposter' && you.alive && you.canKill) {
     shootBtn.style.display = ''; shootBtn.textContent = 'KILL'; shootBtn.style.opacity = '1';
     shootBtn.classList.add('killready'); shootBtn.dataset.amode = 'kill';
+  } else if (you.role === 'imposter' && you.alive && you.ventHere) {
+    shootBtn.style.display = ''; shootBtn.textContent = 'VENT'; shootBtn.style.opacity = '1';
+    shootBtn.classList.add('ventmode'); shootBtn.dataset.amode = 'vent';
   } else if (you.taskHere) {
     shootBtn.style.display = ''; shootBtn.textContent = 'DO TASK'; shootBtn.style.opacity = '1';
     shootBtn.classList.add('taskmode'); shootBtn.dataset.amode = 'task';
@@ -439,6 +472,21 @@ function configureAction(you) {
   } else {
     shootBtn.style.display = 'none'; shootBtn.dataset.amode = 'none';
   }
+}
+
+function renderVent(you) {
+  avnGrid.textContent = '';
+  (you.vents || []).forEach((v) => {
+    const btn = document.createElement('button');
+    btn.className = 'avn-btn' + (v.current ? ' current' : '');
+    btn.textContent = v.label;
+    if (!v.current) {
+      const jump = (e) => { if (e) e.preventDefault(); socket.emit('amongus_action', { type: 'vent_move', ventId: v.id }); };
+      btn.addEventListener('click', jump);
+      btn.addEventListener('touchstart', jump, { passive: false });
+    }
+    avnGrid.appendChild(btn);
+  });
 }
 
 // ---- task minigames ----

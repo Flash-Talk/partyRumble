@@ -16,6 +16,8 @@ const REVEAL_MS = 4500;
 const TASK_RANGE = 105;
 const TASKS_PER_PLAYER = 3;
 const TASK_TYPES = ['hold', 'tap'];
+const VENT_RANGE = 75;
+const TWO_IMPOSTERS_AT = 7; // players
 
 function resolveCircleRect(p, r, rect) {
   const cx = Math.max(rect.x, Math.min(p.x, rect.x + rect.w));
@@ -46,7 +48,7 @@ class AmongUsGame {
     this.radius = RADIUS;
     this.phase = 'play';
     this.winner = null;
-    this.imposter = null;
+    this.imposters = [];
     this.players = {};
     this.votes = {};
     this.result = null;
@@ -60,14 +62,21 @@ class AmongUsGame {
   }
 
   _assign(meta) {
-    this.imposter = this.slots[Math.floor(this.rng() * this.slots.length)];
+    const impCount = this.slots.length >= TWO_IMPOSTERS_AT ? 2 : 1;
+    const order = this.slots.slice();
+    for (let i = order.length - 1; i > 0; i--) { // Fisher-Yates
+      const j = Math.floor(this.rng() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    this.imposters = order.slice(0, impCount);
     this.slots.forEach((slot, i) => {
       const sp = this.map.spawns[i % this.map.spawns.length];
       const m = meta[slot] || {};
       this.players[slot] = {
         slot, name: m.name || slot, color: m.color || '#cccccc',
         x: sp.x, y: sp.y, input: { x: 0, y: 0 },
-        alive: true, role: slot === this.imposter ? 'imposter' : 'crew', tasks: [],
+        alive: true, role: this.imposters.includes(slot) ? 'imposter' : 'crew',
+        tasks: [], vented: false, ventId: null,
       };
     });
   }
@@ -104,8 +113,43 @@ class AmongUsGame {
 
   canKill(slot, now) {
     const p = this.players[slot];
-    return this.phase === 'play' && p && p.alive && p.role === 'imposter'
+    return this.phase === 'play' && p && p.alive && p.role === 'imposter' && !p.vented
       && now >= this.killReadyAt && !!this._nearestCrew(slot);
+  }
+
+  ventNear(slot) {
+    const p = this.players[slot];
+    if (!p) return null;
+    for (const v of this.map.vents) {
+      if (Math.hypot(p.x - v.x, p.y - v.y) <= VENT_RANGE) return v.id;
+    }
+    return null;
+  }
+
+  enterVent(slot) {
+    const p = this.players[slot];
+    if (this.phase !== 'play' || !p || !p.alive || p.role !== 'imposter' || p.vented) return { ok: false };
+    const vid = this.ventNear(slot);
+    if (!vid) return { ok: false };
+    const v = this.map.vents.find((x) => x.id === vid);
+    p.vented = true; p.ventId = vid; p.x = v.x; p.y = v.y; p.input = { x: 0, y: 0 };
+    return { ok: true };
+  }
+
+  moveVent(slot, ventId) {
+    const p = this.players[slot];
+    if (!p || !p.vented) return { ok: false };
+    const v = this.map.vents.find((x) => x.id === ventId);
+    if (!v) return { ok: false };
+    p.ventId = ventId; p.x = v.x; p.y = v.y;
+    return { ok: true };
+  }
+
+  exitVent(slot) {
+    const p = this.players[slot];
+    if (!p || !p.vented) return { ok: false };
+    p.vented = false;
+    return { ok: true };
   }
 
   taskNear(slot) {
@@ -132,7 +176,7 @@ class AmongUsGame {
   // ---- movement (ghosts move too and phase through walls) ----
   setInputAxis(slot, id, value) {
     const p = this.players[slot];
-    if (!p || this.phase !== 'play') return;
+    if (!p || this.phase !== 'play' || p.vented) return;
     if (id === 'x') p.input.x = value;
     else if (id === 'y') p.input.y = value;
   }
@@ -141,7 +185,7 @@ class AmongUsGame {
     if (this.phase !== 'play') return;
     for (const slot of this.slots) {
       const p = this.players[slot];
-      if (!p) continue;
+      if (!p || p.vented) continue; // vented imposters teleport, they don't walk
       let ix = p.input.x, iy = p.input.y;
       const m = Math.hypot(ix, iy);
       if (m > 1) { ix /= m; iy /= m; }
@@ -182,7 +226,7 @@ class AmongUsGame {
     this.meetingEndAt = now + MEETING_MS;
     this.votes = {};
     this.killedThisMeeting = killedSlot || null;
-    for (const s of this.slots) this.players[s].input = { x: 0, y: 0 };
+    for (const s of this.slots) { this.players[s].input = { x: 0, y: 0 }; this.players[s].vented = false; }
   }
 
   vote(slot, target) {
@@ -255,7 +299,8 @@ class AmongUsGame {
       phase: this.phase,
       winner: this.winner,
       taskBar: this.taskProgress(),
-      players: this.slots.map((s) => {
+      // vented imposters vanish from the shared map (so their identity stays hidden)
+      players: this.slots.filter((s) => !this.players[s].vented).map((s) => {
         const p = this.players[s];
         return {
           id: s, color: p.color, x: Math.round(p.x), y: Math.round(p.y),
@@ -283,6 +328,9 @@ class AmongUsGame {
       out.taskHere = this.taskNear(slot);
       out.tasksLeft = p.tasks.filter((t) => !t.done).length;
       out.tasksTotal = p.tasks.length;
+      out.vented = p.vented;
+      if (p.role === 'imposter' && p.alive && !p.vented) out.ventHere = this.ventNear(slot);
+      if (p.vented) out.vents = this.map.vents.map((v) => ({ id: v.id, label: v.label, current: v.id === p.ventId }));
     } else if (this.phase === 'meeting') {
       out.candidates = this.aliveSlots().map((s) => ({ id: s, color: this.players[s].color }));
       out.canVote = p.alive;
@@ -300,7 +348,12 @@ class AmongUsGame {
 
   roleFor(slot) {
     const p = this.players[slot];
-    return p ? { role: p.role, color: p.color, id: slot } : null;
+    if (!p) return null;
+    const out = { role: p.role, color: p.color, id: slot };
+    if (p.role === 'imposter') {
+      out.teammates = this.imposters.filter((s) => s !== slot).map((s) => ({ id: s, color: this.players[s].color }));
+    }
+    return out;
   }
 
   removePlayer(slot) {

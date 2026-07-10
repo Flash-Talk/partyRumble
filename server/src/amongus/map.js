@@ -38,6 +38,11 @@ const MAP = {
     { id: 't5', x: 520, y: 410 }, { id: 't6', x: 1320, y: 410 },
     { id: 't7', x: 520, y: 600 }, { id: 't8', x: 1320, y: 600 },
   ],
+  // Vents (imposter-only). All connected — travel between any of them.
+  vents: [
+    { id: 'v1', label: 'NW', x: 700, y: 330 }, { id: 'v2', label: 'NE', x: 1140, y: 330 },
+    { id: 'v3', label: 'SW', x: 700, y: 670 }, { id: 'v4', label: 'SE', x: 1140, y: 670 },
+  ],
 };
 
 module.exports = { MAP };
