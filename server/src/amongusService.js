@@ -79,6 +79,7 @@ function handleAction(room, slot, payload = {}) {
   const now = Date.now();
   if (payload.type === 'kill') game.tryKill(slot, now);
   else if (payload.type === 'vote') game.vote(slot, payload.target);
+  else if (payload.type === 'task') game.completeTask(slot, payload.stationId);
 }
 
 function resendRole(io, room, slot) {

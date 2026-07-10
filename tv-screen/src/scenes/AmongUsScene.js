@@ -1,6 +1,7 @@
 // TV view of an Among Us round (Phase 1: map + anonymous moving characters).
 // Renders only the server's public state — it never learns who the imposter is.
 import Net from '../net.js';
+import audio from '../audio.js';
 import { DESIGN, hexToNum } from '../config.js';
 
 const MX = 160; // map-space -> screen offset (map is 1600x1000, centered in 1920x1080)
@@ -16,10 +17,22 @@ export default class AmongUsScene extends Phaser.Scene {
     this.avatars = new Map();
     this.overlayObjs = [];
     this.mapDrawn = false;
+    this._prevAlive = {};
+    this._prevPhase = 'play';
+    this._prevVotes = 0;
+    audio.music('game');
 
-    this.add.text(DESIGN.W / 2, 8, 'AMONG US — find the imposter', {
-      fontFamily: 'system-ui, sans-serif', fontSize: '30px', fontStyle: 'bold', color: '#8b93a7',
+    this.add.text(DESIGN.W / 2, 6, 'AMONG US — find the imposter', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '26px', fontStyle: 'bold', color: '#8b93a7',
     }).setOrigin(0.5, 0).setDepth(30);
+
+    // crew task bar
+    this.add.rectangle(DESIGN.W / 2, 58, 560, 24, 0x1a2440).setStrokeStyle(2, 0x2a3350).setDepth(30);
+    this.taskBarFill = this.add.rectangle(DESIGN.W / 2 - 278, 58, 556, 18, 0x4ade80).setOrigin(0, 0.5).setDepth(31);
+    this.taskBarFill.setScale(0.0001, 1);
+    this.taskBarText = this.add.text(DESIGN.W / 2, 58, 'TASKS 0%', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '20px', fontStyle: 'bold', color: '#eef1f7',
+    }).setOrigin(0.5).setDepth(32);
 
     this.onStart = (map) => this.drawMap(map);
     this.onState = (state) => this.renderState(state);
@@ -72,6 +85,28 @@ export default class AmongUsScene extends Phaser.Scene {
   }
 
   renderState(state) {
+    if (this.taskBarFill) {
+      const t = state.taskBar || 0;
+      this.taskBarFill.scaleX = Math.max(0.0001, t);
+      this.taskBarText.setText(`TASKS ${Math.round(t * 100)}%`);
+    }
+
+    // audio cues
+    for (const p of state.players) {
+      if (this._prevAlive[p.id] === undefined) this._prevAlive[p.id] = p.alive;
+      if (this._prevAlive[p.id] && !p.alive) audio.sfx('kill');
+      this._prevAlive[p.id] = p.alive;
+    }
+    if (state.phase === 'meeting' && this._prevPhase !== 'meeting') audio.sfx('meeting');
+    if (state.phase === 'meeting' && state.meeting) {
+      const total = Object.values(state.meeting.tally.counts).reduce((a, b) => a + b, 0) + (state.meeting.tally.skip || 0);
+      if (total > this._prevVotes) audio.sfx('ding');
+      this._prevVotes = total;
+    } else {
+      this._prevVotes = 0;
+    }
+    this._prevPhase = state.phase;
+
     const seen = new Set();
     for (const p of state.players) {
       seen.add(p.id);
@@ -165,6 +200,7 @@ export default class AmongUsScene extends Phaser.Scene {
   }
 
   showOver(data) {
+    audio.sfx(data && data.winner === 'imposter' ? 'lose' : 'win');
     const msg = data && data.winner === 'imposter' ? 'IMPOSTER WINS'
       : data && data.winner === 'crew' ? 'CREW WINS' : 'ROUND OVER';
     this.add.rectangle(DESIGN.W / 2, DESIGN.H / 2, DESIGN.W, 200, 0x0a0e1a, 0.85).setDepth(40);

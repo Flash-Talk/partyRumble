@@ -18,6 +18,20 @@ play it, draw, or call **UNO!**. Stacking Draw Two/Four, and a +2 penalty if you
 forget to call UNO. First to empty their hand wins. The server runs the game
 (so nobody can peek at your cards, and reconnects resume your hand).
 
+### 🔪 Among Us (social deduction, 4–8 players)
+A walkable-map deduction game — **best with everyone in a room or on a voice
+call** (you find the imposter by talking it out). Each player gets a secret role
+(1 imposter) and a **colored, name-hidden** character on the shared TV. Walk
+around with the joystick and do **task minigames**; the **imposter** kills
+nearby crewmates on a cooldown. A kill reveals the victim's name and opens an
+**emergency meeting** — everyone **votes live** (a color or Skip) to eject a
+suspect. **Crew win** by ejecting the imposter or finishing all tasks; the
+**imposter wins** at parity. Ghosts keep doing tasks. Server-authoritative, so
+the imposter's identity never touches the TV.
+
+> **Sound:** the TV synthesizes music + SFX (no audio files). Browsers block
+> autoplay, so **press a key or tap the TV once** to enable sound.
+
 Built on the platform described in [`partyGame.md`](./partyGame.md): a Node +
 socket.io relay server, a Phaser TV screen, and a vanilla-JS phone controller.
 Full design spec: [`docs/superpowers/specs/2026-07-09-4-way-penalty-rumble-design.md`](./docs/superpowers/specs/2026-07-09-4-way-penalty-rumble-design.md).

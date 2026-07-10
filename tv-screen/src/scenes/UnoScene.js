@@ -1,6 +1,7 @@
 // TV view of an UNO round. Purely renders the server's public state
 // (Net.unoState / 'uno_state' events); the server is authoritative.
 import Net from '../net.js';
+import audio from '../audio.js';
 import { DESIGN } from '../config.js';
 
 const COLOR_HEX = { red: '#ef4444', yellow: '#eab308', green: '#22c55e', blue: '#3b82f6' };
@@ -18,8 +19,10 @@ export default class UnoScene extends Phaser.Scene {
 
   create() {
     this.cameras.main.setBackgroundColor('#0a0e1a');
+    audio.music('game');
     this.dyn = [];
     this.over = false;
+    this._prevAction = '';
 
     this.add.text(DESIGN.W / 2, 20, 'UNO', {
       fontFamily: 'system-ui, sans-serif', fontSize: '40px', fontStyle: 'bold', color: '#eab308',
@@ -63,6 +66,10 @@ export default class UnoScene extends Phaser.Scene {
 
   render(state) {
     if (this.over) return;
+    if (state.lastAction && state.lastAction.text && state.lastAction.text !== this._prevAction) {
+      this._prevAction = state.lastAction.text;
+      audio.sfx('card');
+    }
     if (this.waiting) { this.waiting.destroy(); this.waiting = null; }
     this.clearDyn();
 
@@ -137,6 +144,7 @@ export default class UnoScene extends Phaser.Scene {
 
   showWinner(data) {
     this.over = true;
+    audio.sfx('win');
     if (this.waiting) { this.waiting.destroy(); this.waiting = null; }
     this.clearDyn();
     const name = (data && data.winnerName) || 'Nobody';

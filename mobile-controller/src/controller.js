@@ -186,14 +186,16 @@ function setShoot(down) {
 }
 // During Among Us play the SHOOT button becomes the imposter's KILL button.
 function shootDown() {
-  if (amongusActive && amongusYou && amongusYou.phase === 'play' && amongusYou.role === 'imposter') {
-    if (amongusYou.canKill) socket.emit('amongus_action', { type: 'kill' });
+  if (amongusActive && amongusYou && amongusYou.phase === 'play') {
+    const mode = shootBtn.dataset.amode;
+    if (mode === 'kill') { if (amongusYou.canKill) socket.emit('amongus_action', { type: 'kill' }); return; }
+    if (mode === 'task') { if (amongusYou.taskHere) openTask(amongusYou.taskHere); return; }
     return;
   }
   setShoot(true);
 }
 function shootUp() {
-  if (amongusActive && amongusYou && amongusYou.role === 'imposter') return;
+  if (amongusActive && amongusYou) return; // amongus action buttons are tap, not hold
   setShoot(false);
 }
 shootBtn.addEventListener('touchstart', (e) => { e.preventDefault(); shootDown(); }, { passive: false });
@@ -355,11 +357,18 @@ bindUno(unoUno, 'uno');
 const amongusRole = $('amongusRole');
 const amongusVote = $('amongusVote');
 const amongusDead = $('amongusDead');
+const amongusTasks = $('amongusTasks');
+const amongusTask = $('amongusTask');
+const atTitle = $('atTitle');
+const atArea = $('atArea');
+const atClose = $('atClose');
 const avKilled = $('avKilled');
 const avTitle = $('avTitle');
 const avTimer = $('avTimer');
 const avGrid = $('avGrid');
 const avStatus = $('avStatus');
+atClose.addEventListener('click', () => closeTask());
+atClose.addEventListener('touchstart', (e) => { e.preventDefault(); closeTask(); }, { passive: false });
 
 socket.on('amongus_role', (r) => {
   amongusActive = true;
@@ -386,9 +395,11 @@ socket.on('amongus_over', () => {
   amongusRole.classList.remove('show');
   amongusVote.classList.remove('show');
   amongusDead.classList.remove('show');
+  amongusTasks.style.display = 'none';
+  closeTask();
   shootBtn.style.display = '';
   shootBtn.textContent = 'SHOOT';
-  shootBtn.classList.remove('killready');
+  shootBtn.classList.remove('killready', 'taskmode');
   shootBtn.style.opacity = '1';
   controllerEl.style.display = 'flex';
 });
@@ -396,8 +407,10 @@ socket.on('amongus_over', () => {
 function renderAmongus(you) {
   if (!amongusActive) return;
   if (you.phase === 'meeting' || you.phase === 'reveal') {
+    if (currentTask) closeTask();
     controllerEl.style.display = 'none';
     amongusDead.classList.remove('show');
+    amongusTasks.style.display = 'none';
     amongusVote.classList.add('show');
     if (you.phase === 'meeting') renderMeeting(you);
     else renderReveal(you);
@@ -407,17 +420,90 @@ function renderAmongus(you) {
   amongusVote.classList.remove('show');
   controllerEl.style.display = 'flex';
   amongusDead.classList.toggle('show', you.alive === false);
-  configureKill(you);
+  amongusTasks.style.display = '';
+  amongusTasks.textContent = `Tasks ${(you.tasksTotal || 0) - (you.tasksLeft || 0)}/${you.tasksTotal || 0}`;
+  configureAction(you);
 }
 
-function configureKill(you) {
-  if (you.role === 'imposter' && you.alive) {
-    shootBtn.style.display = '';
-    shootBtn.textContent = you.canKill ? 'KILL' : (you.killCooldown ? `KILL ${you.killCooldown}s` : 'KILL');
-    shootBtn.classList.toggle('killready', !!you.canKill);
-    shootBtn.style.opacity = you.canKill ? '1' : '0.45';
+function configureAction(you) {
+  shootBtn.classList.remove('killready', 'taskmode');
+  if (you.role === 'imposter' && you.alive && you.canKill) {
+    shootBtn.style.display = ''; shootBtn.textContent = 'KILL'; shootBtn.style.opacity = '1';
+    shootBtn.classList.add('killready'); shootBtn.dataset.amode = 'kill';
+  } else if (you.taskHere) {
+    shootBtn.style.display = ''; shootBtn.textContent = 'DO TASK'; shootBtn.style.opacity = '1';
+    shootBtn.classList.add('taskmode'); shootBtn.dataset.amode = 'task';
+  } else if (you.role === 'imposter' && you.alive) {
+    shootBtn.style.display = ''; shootBtn.style.opacity = '0.45'; shootBtn.dataset.amode = 'kill';
+    shootBtn.textContent = you.killCooldown ? `KILL ${you.killCooldown}s` : 'KILL';
   } else {
-    shootBtn.style.display = 'none';
+    shootBtn.style.display = 'none'; shootBtn.dataset.amode = 'none';
+  }
+}
+
+// ---- task minigames ----
+let currentTask = null;
+function openTask(th) {
+  currentTask = th;
+  atArea.textContent = '';
+  amongusTask.classList.add('show');
+  if (th.type === 'hold') startHoldTask();
+  else startTapTask();
+}
+function closeTask() { currentTask = null; amongusTask.classList.remove('show'); atArea.textContent = ''; }
+function completeCurrentTask() {
+  if (!currentTask) return;
+  socket.emit('amongus_action', { type: 'task', stationId: currentTask.stationId });
+  closeTask();
+}
+
+function startHoldTask() {
+  atTitle.textContent = 'Hold the button to fix it';
+  const btn = document.createElement('div');
+  btn.className = 'task-hold';
+  btn.textContent = 'HOLD';
+  const wrap = document.createElement('div');
+  wrap.className = 'task-barwrap';
+  const fill = document.createElement('div');
+  fill.className = 'task-fill';
+  wrap.appendChild(fill);
+  atArea.appendChild(btn);
+  atArea.appendChild(wrap);
+
+  const DURATION = 1600;
+  let held = false, t0 = 0;
+  const tick = () => {
+    if (!held || !currentTask) return;
+    const pct = Math.min(1, (performance.now() - t0) / DURATION);
+    fill.style.width = `${pct * 100}%`;
+    if (pct >= 1) { completeCurrentTask(); return; }
+    requestAnimationFrame(tick);
+  };
+  const down = (e) => { if (e) e.preventDefault(); held = true; t0 = performance.now(); tick(); };
+  const up = (e) => { if (e) e.preventDefault(); held = false; fill.style.width = '0%'; };
+  btn.addEventListener('touchstart', down, { passive: false });
+  btn.addEventListener('touchend', up, { passive: false });
+  btn.addEventListener('touchcancel', up, { passive: false });
+  btn.addEventListener('mousedown', down);
+  window.addEventListener('mouseup', up);
+}
+
+function startTapTask() {
+  atTitle.textContent = 'Tap all the dots';
+  let remaining = 5;
+  for (let i = 0; i < 5; i++) {
+    const d = document.createElement('button');
+    d.className = 'task-dot';
+    const tap = (e) => {
+      if (e) e.preventDefault();
+      if (d.classList.contains('hit')) return;
+      d.classList.add('hit');
+      remaining -= 1;
+      if (remaining <= 0) completeCurrentTask();
+    };
+    d.addEventListener('touchstart', tap, { passive: false });
+    d.addEventListener('click', tap);
+    atArea.appendChild(d);
   }
 }
 

@@ -196,6 +196,29 @@
       border-radius: 10px; display: none;
     }
     #amongusDead.show { display: block; }
+
+    #amongusTasks {
+      position: absolute; top: 12px; right: 12px; z-index: 12;
+      background: rgba(0,0,0,0.5); color: #4ade80; font-weight: 800; padding: 6px 12px; border-radius: 10px; display: none;
+    }
+    #shootBtn.taskmode { background: #3b82f6; box-shadow: 0 0 40px #3b82f6; color: #fff; }
+
+    #amongusTask {
+      position: absolute; inset: 0; z-index: 26; display: none; flex-direction: column;
+      align-items: center; justify-content: center; gap: 26px; background: rgba(6,10,22,0.96);
+    }
+    #amongusTask.show { display: flex; }
+    #atClose { position: absolute; top: 12px; right: 18px; background: none; border: none; color: #eef1f7; font-size: 42px; line-height: 1; }
+    #atTitle { font-size: 24px; font-weight: 800; text-align: center; padding: 0 20px; }
+    #atArea { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 20px; max-width: 340px; }
+    .task-hold {
+      width: 170px; height: 170px; border-radius: 50%; background: #3b82f6; color: #fff; font-size: 28px; font-weight: 900;
+      display: flex; align-items: center; justify-content: center; box-shadow: 0 0 40px rgba(59,130,246,0.5); user-select: none;
+    }
+    .task-barwrap { width: 260px; height: 22px; background: #1a2440; border-radius: 12px; overflow: hidden; }
+    .task-fill { width: 0%; height: 100%; background: #4ade80; }
+    .task-dot { width: 84px; height: 84px; border-radius: 50%; background: #eab308; border: 3px solid #fff; }
+    .task-dot.hit { background: #4ade80; opacity: 0.45; }
   </style>
 </head>
 <body>
@@ -283,6 +306,14 @@
     <div id="avStatus"></div>
   </section>
   <div id="amongusDead">💀 You're dead — spectating</div>
+  <div id="amongusTasks"></div>
+
+  <!-- Among Us task minigame overlay -->
+  <section id="amongusTask">
+    <button id="atClose" aria-label="Close">×</button>
+    <div id="atTitle">TASK</div>
+    <div id="atArea"></div>
+  </section>
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="src/controller.js"></script>

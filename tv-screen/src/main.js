@@ -6,7 +6,14 @@ import ResultScene from './scenes/ResultScene.js';
 import UnoScene from './scenes/UnoScene.js';
 import AmongUsScene from './scenes/AmongUsScene.js';
 import Net from './net.js';
+import audio from './audio.js';
 import { DESIGN } from './config.js';
+
+// Browsers block autoplay — enable audio on the first user gesture on the TV
+// (a key press on a laptop/remote, or a tap).
+const enableAudio = () => audio.enable();
+window.addEventListener('pointerdown', enableAudio);
+window.addEventListener('keydown', enableAudio);
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
@@ -25,4 +32,5 @@ const game = new Phaser.Game({
 if (window.location.search.includes('debug')) {
   window.__game = game;
   window.__net = Net;
+  window.__audio = audio;
 }

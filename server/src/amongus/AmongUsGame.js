@@ -1,25 +1,26 @@
 'use strict';
 
-// Authoritative Among Us simulation (Phases 1-3: movement, hidden roles,
-// proximity kill + death reveal, instant meeting, live voting, win conditions).
-// The server owns this so the imposter's identity never reaches the shared TV.
-// publicState() is anonymized (color + position; a name appears only once a
-// player is dead/ejected; roles are NEVER serialized).
+// Authoritative Among Us simulation (Phases 1-4): movement, hidden roles,
+// proximity kill + death reveal, meetings + live voting + win conditions, and
+// task minigames (crew win path). Server-owned so the imposter's identity never
+// reaches the shared TV. publicState() is anonymized.
 
 const { MAP } = require('./map');
 
-const SPEED = 330;            // px/s in map space
+const SPEED = 330;
 const RADIUS = 26;
-const KILL_RANGE = 100;       // imposter must be this close to kill
+const KILL_RANGE = 100;
 const KILL_COOLDOWN_MS = 15000;
-const MEETING_MS = 30000;     // fallback if not everyone votes
-const REVEAL_MS = 4500;       // show the ejection result
+const MEETING_MS = 30000;
+const REVEAL_MS = 4500;
+const TASK_RANGE = 95;
+const TASKS_PER_PLAYER = 3;
+const TASK_TYPES = ['hold', 'tap'];
 
 function resolveCircleRect(p, r, rect) {
   const cx = Math.max(rect.x, Math.min(p.x, rect.x + rect.w));
   const cy = Math.max(rect.y, Math.min(p.y, rect.y + rect.h));
-  const dx = p.x - cx;
-  const dy = p.y - cy;
+  const dx = p.x - cx, dy = p.y - cy;
   const d = Math.hypot(dx, dy);
   if (d >= r) return;
   if (d === 0) {
@@ -43,7 +44,7 @@ class AmongUsGame {
     this.rng = opts.rng || Math.random;
     this.map = MAP;
     this.radius = RADIUS;
-    this.phase = 'play';      // play | meeting | reveal | over
+    this.phase = 'play';
     this.winner = null;
     this.imposter = null;
     this.players = {};
@@ -53,7 +54,9 @@ class AmongUsGame {
     this.killReadyAt = 0;
     this.meetingEndAt = 0;
     this.revealEndAt = 0;
+    this.realTaskTotal = 0;
     this._assign(meta);
+    this._assignTasks();
   }
 
   _assign(meta) {
@@ -64,9 +67,22 @@ class AmongUsGame {
       this.players[slot] = {
         slot, name: m.name || slot, color: m.color || '#cccccc',
         x: sp.x, y: sp.y, input: { x: 0, y: 0 },
-        alive: true, role: slot === this.imposter ? 'imposter' : 'crew',
+        alive: true, role: slot === this.imposter ? 'imposter' : 'crew', tasks: [],
       };
     });
+  }
+
+  _assignTasks() {
+    const stationIds = this.map.tasks.map((t) => t.id);
+    let realTotal = 0;
+    this.slots.forEach((slot, idx) => {
+      const p = this.players[slot];
+      const shuffled = stationIds.slice().sort(() => this.rng() - 0.5);
+      const picks = shuffled.slice(0, Math.min(TASKS_PER_PLAYER, stationIds.length));
+      p.tasks = picks.map((sid, i) => ({ stationId: sid, type: TASK_TYPES[(idx + i) % TASK_TYPES.length], done: false }));
+      if (p.role === 'crew') realTotal += p.tasks.length; // imposter tasks are fake (cover)
+    });
+    this.realTaskTotal = realTotal;
   }
 
   // ---- helpers ----
@@ -92,10 +108,31 @@ class AmongUsGame {
       && now >= this.killReadyAt && !!this._nearestCrew(slot);
   }
 
-  // ---- movement ----
+  taskNear(slot) {
+    const p = this.players[slot];
+    if (!p) return null;
+    for (const t of p.tasks) {
+      if (t.done) continue;
+      const st = this.map.tasks.find((s) => s.id === t.stationId);
+      if (st && Math.hypot(p.x - st.x, p.y - st.y) <= TASK_RANGE) return { stationId: t.stationId, type: t.type };
+    }
+    return null;
+  }
+
+  taskProgress() {
+    if (this.realTaskTotal === 0) return 0;
+    let done = 0;
+    for (const s of this.slots) {
+      const p = this.players[s];
+      if (p.role === 'crew') done += p.tasks.filter((t) => t.done).length;
+    }
+    return done / this.realTaskTotal;
+  }
+
+  // ---- movement (ghosts move too and phase through walls) ----
   setInputAxis(slot, id, value) {
     const p = this.players[slot];
-    if (!p || !p.alive || this.phase !== 'play') return;
+    if (!p || this.phase !== 'play') return;
     if (id === 'x') p.input.x = value;
     else if (id === 'y') p.input.y = value;
   }
@@ -104,7 +141,7 @@ class AmongUsGame {
     if (this.phase !== 'play') return;
     for (const slot of this.slots) {
       const p = this.players[slot];
-      if (!p || !p.alive) continue;
+      if (!p) continue;
       let ix = p.input.x, iy = p.input.y;
       const m = Math.hypot(ix, iy);
       if (m > 1) { ix /= m; iy /= m; }
@@ -112,7 +149,7 @@ class AmongUsGame {
       p.y += iy * SPEED * dt;
       p.x = Math.max(this.radius, Math.min(this.map.w - this.radius, p.x));
       p.y = Math.max(this.radius, Math.min(this.map.h - this.radius, p.y));
-      for (const w of this.map.walls) resolveCircleRect(p, this.radius, w);
+      if (p.alive) for (const w of this.map.walls) resolveCircleRect(p, this.radius, w);
     }
   }
 
@@ -125,6 +162,19 @@ class AmongUsGame {
     this.players[victim].input = { x: 0, y: 0 };
     this._startMeeting(now, victim);
     return { ok: true, victim };
+  }
+
+  completeTask(slot, stationId) {
+    if (this.phase !== 'play') return { ok: false };
+    const p = this.players[slot];
+    if (!p) return { ok: false };
+    const task = p.tasks.find((t) => t.stationId === stationId && !t.done);
+    if (!task) return { ok: false };
+    const st = this.map.tasks.find((s) => s.id === stationId);
+    if (!st || Math.hypot(p.x - st.x, p.y - st.y) > TASK_RANGE) return { ok: false };
+    task.done = true;
+    if (this.realTaskTotal > 0 && this.taskProgress() >= 1) { this.winner = 'crew'; this.phase = 'over'; }
+    return { ok: true };
   }
 
   _startMeeting(now, killedSlot) {
@@ -187,6 +237,7 @@ class AmongUsGame {
   _winner() {
     if (this.aliveImp() === 0) return 'crew';
     if (this.aliveImp() >= this.aliveCrew()) return 'imposter';
+    if (this.realTaskTotal > 0 && this.taskProgress() >= 1) return 'crew';
     return null;
   }
 
@@ -203,6 +254,7 @@ class AmongUsGame {
     return {
       phase: this.phase,
       winner: this.winner,
+      taskBar: this.taskProgress(),
       players: this.slots.map((s) => {
         const p = this.players[s];
         return {
@@ -214,8 +266,7 @@ class AmongUsGame {
         tally: this._tally(),
         candidates: this.aliveSlots().map((s) => ({ id: s, color: this.players[s].color })),
         killed: this.killedThisMeeting
-          ? { name: this.players[this.killedThisMeeting].name, color: this.players[this.killedThisMeeting].color }
-          : null,
+          ? { name: this.players[this.killedThisMeeting].name, color: this.players[this.killedThisMeeting].color } : null,
         timeLeft: Math.max(0, Math.ceil((this.meetingEndAt - now) / 1000)),
       } : null,
       result: (this.phase === 'reveal' || this.phase === 'over') ? this.result : null,
@@ -229,6 +280,9 @@ class AmongUsGame {
     if (this.phase === 'play') {
       out.canKill = this.canKill(slot, now);
       out.killCooldown = Math.max(0, Math.ceil((this.killReadyAt - now) / 1000));
+      out.taskHere = this.taskNear(slot);
+      out.tasksLeft = p.tasks.filter((t) => !t.done).length;
+      out.tasksTotal = p.tasks.length;
     } else if (this.phase === 'meeting') {
       out.candidates = this.aliveSlots().map((s) => ({ id: s, color: this.players[s].color }));
       out.canVote = p.alive;
@@ -253,6 +307,10 @@ class AmongUsGame {
     delete this.players[slot];
     this.slots = this.slots.filter((s) => s !== slot);
     delete this.votes[slot];
+    // recompute crew task total so a departed crew doesn't block the task win
+    let realTotal = 0;
+    for (const s of this.slots) { const p = this.players[s]; if (p.role === 'crew') realTotal += p.tasks.length; }
+    this.realTaskTotal = realTotal;
   }
 }
 

@@ -2,6 +2,7 @@
 // loop (so the polygon arena's angled walls bounce correctly). Server only
 // relays input. Supports 2-8 players on an arena that fits the player count.
 import Net from '../net.js';
+import audio from '../audio.js';
 import { DESIGN, CONFIG, SLOT_META, POWERUP_TYPES, hexToNum } from '../config.js';
 import { buildArena } from '../geometry.js';
 
@@ -14,6 +15,7 @@ export default class GameScene extends Phaser.Scene {
 
   create() {
     this.cameras.main.setBackgroundColor('#0a0e1a');
+    audio.music('game');
 
     this.slots = Net.activeSlots();
     this.meta = {};
@@ -367,6 +369,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     this.cameras.main.flash(250, 255, 255, 255);
+    audio.sfx('goal');
     this.showBanner(msg, color);
     this.dropBall();
 
@@ -404,6 +407,7 @@ export default class GameScene extends Phaser.Scene {
   endMatch(standings) {
     if (this.over) return;
     this.over = true;
+    audio.sfx('win');
     this.time.delayedCall(600, () => this.scene.start('ResultScene', { standings, roomCode: Net.roomCode }));
   }
 

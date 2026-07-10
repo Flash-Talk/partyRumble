@@ -96,6 +96,46 @@ test('imposter reaches parity => imposter win', () => {
   assert.equal(g.phase, 'over');
 });
 
+test('tasks are assigned; only crew tasks count toward the bar', () => {
+  const g = mk();
+  assert.ok(g.players.p2.tasks.length >= 1);
+  const expected = ['p2', 'p3', 'p4'].reduce((n, s) => n + g.players[s].tasks.length, 0);
+  assert.equal(g.realTaskTotal, expected);
+  assert.equal(g.taskProgress(), 0);
+});
+
+test('completing all crew tasks wins for the crew', () => {
+  const g = mk();
+  g.startPlayRound(0);
+  for (const s of ['p2', 'p3', 'p4']) {
+    for (const t of g.players[s].tasks) {
+      const st = g.map.tasks.find((x) => x.id === t.stationId);
+      g.players[s].x = st.x; g.players[s].y = st.y;
+      assert.ok(g.completeTask(s, t.stationId).ok);
+    }
+  }
+  assert.equal(g.phase, 'over');
+  assert.equal(g.winner, 'crew');
+});
+
+test('a task only completes when the player is at the station', () => {
+  const g = mk();
+  g.startPlayRound(0);
+  const t = g.players.p2.tasks[0];
+  g.players.p2.x = 0; g.players.p2.y = 0; // far from any station
+  assert.equal(g.completeTask('p2', t.stationId).ok, false);
+});
+
+test('a dead crewmate (ghost) can still move to finish tasks', () => {
+  const g = mk();
+  g.startPlayRound(0);
+  g.players.p2.alive = false;
+  const bx = g.players.p2.x;
+  g.setInputAxis('p2', 'x', 1);
+  g.step(0.2);
+  assert.ok(g.players.p2.x > bx);
+});
+
 test('reveal advances back to play after its timer', () => {
   const g = mk();
   g._startMeeting(0, null);

@@ -1,6 +1,7 @@
 // Shows how to join (URL + big room code, QR as a bonus), lists joined players
 // (up to 8), and starts the match when any player presses SHOOT.
 import Net from '../net.js';
+import audio from '../audio.js';
 import { DESIGN, CONFIG, SLOT_ORDER, SLOT_META, hexToNum } from '../config.js';
 
 export default class LobbyScene extends Phaser.Scene {
@@ -84,6 +85,11 @@ export default class LobbyScene extends Phaser.Scene {
     this.startHint = this.add.text(DESIGN.W / 2, 1016, '', {
       fontFamily: 'system-ui, sans-serif', fontSize: '38px', fontStyle: 'bold', color: '#4ade80',
     }).setOrigin(0.5);
+
+    this.add.text(DESIGN.W / 2, 1058, '🔊 press a key or tap the screen to enable sound', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '20px', color: '#4b557f',
+    }).setOrigin(0.5);
+    audio.music('lobby');
 
     this.refreshRoster();
     this.onPlayersChanged = () => this.refreshRoster();
