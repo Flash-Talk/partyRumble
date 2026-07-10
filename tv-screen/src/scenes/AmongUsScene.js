@@ -21,6 +21,7 @@ export default class AmongUsScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor('#0a0e1a');
     this.avatars = new Map();
     this.overlayObjs = [];
+    this.sabObjs = [];
     this.mapDrawn = false;
     this.mx = 40;
     this.my = 40;
@@ -179,9 +180,35 @@ export default class AmongUsScene extends Phaser.Scene {
       if (!seen.has(id)) { av.destroy(); this.avatars.delete(id); }
     }
 
+    this.clearSab();
+    if (state.phase === 'play' && state.sabotage) this.drawSab(state.sabotage);
+
     this.clearOverlay();
     if (state.phase === 'meeting' && state.meeting) this.drawMeeting(state.meeting);
     else if (state.phase === 'reveal' && state.result) this.drawReveal(state.result);
+  }
+
+  clearSab() { this.sabObjs.forEach((o) => o.destroy()); this.sabObjs = []; }
+  pushSab(o) { this.sabObjs.push(o); return o; }
+
+  drawSab(s) {
+    const sx = this.mx + s.station.x, sy = this.my + s.station.y;
+    if (s.type === 'lights') {
+      this.pushSab(this.add.rectangle(DESIGN.W / 2, DESIGN.H / 2, DESIGN.W, DESIGN.H, 0x000000, 0.62).setDepth(16));
+      this.pushSab(this.add.text(DESIGN.W / 2, 96, '💡 LIGHTS SABOTAGED — go fix them', {
+        fontFamily: 'system-ui, sans-serif', fontSize: '40px', fontStyle: 'bold', color: '#fde047',
+      }).setOrigin(0.5).setDepth(48));
+    } else {
+      const pulse = 0.12 + 0.16 * Math.abs(Math.sin(this.time.now / 200));
+      this.pushSab(this.add.rectangle(DESIGN.W / 2, DESIGN.H / 2, DESIGN.W, DESIGN.H, 0xff0000, pulse).setDepth(16));
+      this.pushSab(this.add.text(DESIGN.W / 2, 96, `⚠️ REACTOR MELTDOWN — ${s.timeLeft}s`, {
+        fontFamily: 'system-ui, sans-serif', fontSize: '48px', fontStyle: 'bold', color: '#ff3b3b',
+      }).setOrigin(0.5).setDepth(48));
+    }
+    this.pushSab(this.add.circle(sx, sy, 42, 0x000000, 0).setStrokeStyle(6, 0xffe066, 1).setDepth(48));
+    this.pushSab(this.add.text(sx, sy + 56, 'FIX HERE', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '24px', fontStyle: 'bold', color: '#ffe066',
+    }).setOrigin(0.5).setDepth(48));
   }
 
   killFlash(x, y) {

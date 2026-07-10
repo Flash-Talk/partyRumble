@@ -189,6 +189,7 @@ function shootDown() {
   if (amongusActive && amongusYou && amongusYou.phase === 'play') {
     const mode = shootBtn.dataset.amode;
     if (mode === 'kill') { if (amongusYou.canKill) socket.emit('amongus_action', { type: 'kill' }); return; }
+    if (mode === 'fix') { if (amongusYou.fixHere) openFix(); return; }
     if (mode === 'vent') { if (amongusYou.ventHere) socket.emit('amongus_action', { type: 'vent' }); return; }
     if (mode === 'task') { if (amongusYou.taskHere) openTask(amongusYou.taskHere); return; }
     return;
@@ -368,6 +369,25 @@ const avnGrid = $('avnGrid');
 const avnExit = $('avnExit');
 avnExit.addEventListener('click', () => socket.emit('amongus_action', { type: 'vent_exit' }));
 avnExit.addEventListener('touchstart', (e) => { e.preventDefault(); socket.emit('amongus_action', { type: 'vent_exit' }); }, { passive: false });
+
+const amongusSab = $('amongusSab');
+const amongusSabMenu = $('amongusSabMenu');
+const sabCancel = $('sabCancel');
+const openSabMenu = (e) => { if (e) e.preventDefault(); if (amongusYou && amongusYou.canSabotage) amongusSabMenu.classList.add('show'); };
+amongusSab.addEventListener('click', openSabMenu);
+amongusSab.addEventListener('touchstart', openSabMenu, { passive: false });
+const closeSabMenu = (e) => { if (e) e.preventDefault(); amongusSabMenu.classList.remove('show'); };
+sabCancel.addEventListener('click', closeSabMenu);
+sabCancel.addEventListener('touchstart', closeSabMenu, { passive: false });
+amongusSabMenu.querySelectorAll('.sm-btn').forEach((btn) => {
+  const fire = (e) => {
+    if (e) e.preventDefault();
+    socket.emit('amongus_action', { type: 'sabotage', kind: btn.dataset.kind });
+    amongusSabMenu.classList.remove('show');
+  };
+  btn.addEventListener('click', fire);
+  btn.addEventListener('touchstart', fire, { passive: false });
+});
 const avKilled = $('avKilled');
 const avTitle = $('avTitle');
 const avTimer = $('avTimer');
@@ -415,11 +435,13 @@ socket.on('amongus_over', () => {
   amongusVote.classList.remove('show');
   amongusDead.classList.remove('show');
   amongusVent.classList.remove('show');
+  amongusSab.style.display = 'none';
+  amongusSabMenu.classList.remove('show');
   amongusTasks.style.display = 'none';
   closeTask();
   shootBtn.style.display = '';
   shootBtn.textContent = 'SHOOT';
-  shootBtn.classList.remove('killready', 'taskmode', 'ventmode');
+  shootBtn.classList.remove('killready', 'taskmode', 'ventmode', 'fixmode');
   shootBtn.style.opacity = '1';
   controllerEl.style.display = 'flex';
 });
@@ -432,6 +454,8 @@ function renderAmongus(you) {
     amongusDead.classList.remove('show');
     amongusTasks.style.display = 'none';
     amongusVent.classList.remove('show');
+    amongusSab.style.display = 'none';
+    amongusSabMenu.classList.remove('show');
     amongusVote.classList.add('show');
     if (you.phase === 'meeting') renderMeeting(you);
     else renderReveal(you);
@@ -443,6 +467,8 @@ function renderAmongus(you) {
   if (you.vented) { // imposter in the vents
     controllerEl.style.display = 'none';
     amongusTasks.style.display = 'none';
+    amongusSab.style.display = 'none';
+    amongusSabMenu.classList.remove('show');
     amongusVent.classList.add('show');
     renderVent(you);
     return;
@@ -453,13 +479,25 @@ function renderAmongus(you) {
   amongusTasks.style.display = '';
   amongusTasks.textContent = `Tasks ${(you.tasksTotal || 0) - (you.tasksLeft || 0)}/${you.tasksTotal || 0}`;
   configureAction(you);
+
+  if (you.role === 'imposter' && you.alive) {
+    amongusSab.style.display = '';
+    amongusSab.disabled = !you.canSabotage;
+    amongusSab.textContent = you.sabActive ? 'SABOTAGE ✓'
+      : (you.canSabotage ? 'SABOTAGE' : `SABOTAGE ${you.sabCooldown || ''}s`);
+  } else {
+    amongusSab.style.display = 'none';
+  }
 }
 
 function configureAction(you) {
-  shootBtn.classList.remove('killready', 'taskmode', 'ventmode');
+  shootBtn.classList.remove('killready', 'taskmode', 'ventmode', 'fixmode');
   if (you.role === 'imposter' && you.alive && you.canKill) {
     shootBtn.style.display = ''; shootBtn.textContent = 'KILL'; shootBtn.style.opacity = '1';
     shootBtn.classList.add('killready'); shootBtn.dataset.amode = 'kill';
+  } else if (you.fixHere) {
+    shootBtn.style.display = ''; shootBtn.textContent = 'FIX'; shootBtn.style.opacity = '1';
+    shootBtn.classList.add('fixmode'); shootBtn.dataset.amode = 'fix';
   } else if (you.role === 'imposter' && you.alive && you.ventHere) {
     shootBtn.style.display = ''; shootBtn.textContent = 'VENT'; shootBtn.style.opacity = '1';
     shootBtn.classList.add('ventmode'); shootBtn.dataset.amode = 'vent';
@@ -492,16 +530,23 @@ function renderVent(you) {
 // ---- task minigames ----
 let currentTask = null;
 function openTask(th) {
-  currentTask = th;
+  currentTask = { kind: 'task', stationId: th.stationId };
   atArea.textContent = '';
   amongusTask.classList.add('show');
   if (th.type === 'hold') startHoldTask();
   else startTapTask();
 }
+function openFix() {
+  currentTask = { kind: 'fix' };
+  atArea.textContent = '';
+  amongusTask.classList.add('show');
+  startHoldTask();
+}
 function closeTask() { currentTask = null; amongusTask.classList.remove('show'); atArea.textContent = ''; }
 function completeCurrentTask() {
   if (!currentTask) return;
-  socket.emit('amongus_action', { type: 'task', stationId: currentTask.stationId });
+  if (currentTask.kind === 'fix') socket.emit('amongus_action', { type: 'fix' });
+  else socket.emit('amongus_action', { type: 'task', stationId: currentTask.stationId });
   closeTask();
 }
 

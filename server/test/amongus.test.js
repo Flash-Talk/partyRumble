@@ -83,14 +83,38 @@ test('venting: imposter enters/moves/exits, vanishes from the shared map; crew c
   assert.equal(g.players[imp].vented, true);
   assert.ok(!g.publicState(0).players.find((p) => p.id === imp), 'vented imposter is hidden');
   assert.equal(g.canKill(imp, 20000), false, 'cannot kill while vented');
-  assert.ok(g.moveVent(imp, g.map.vents[1].id).ok);
-  assert.equal(g.players[imp].x, g.map.vents[1].x);
+  assert.equal(g.moveVent(imp, 'v4').ok, false, 'v4 is not adjacent to v1');
+  assert.ok(g.moveVent(imp, 'v2').ok, 'v2 is adjacent to v1');
+  assert.equal(g.players[imp].x, g.map.vents.find((v) => v.id === 'v2').x);
   assert.ok(g.exitVent(imp).ok);
   assert.equal(g.players[imp].vented, false);
 
   const crew = crewOf(g)[0];
   g.players[crew].x = v0.x; g.players[crew].y = v0.y;
   assert.equal(g.enterVent(crew).ok, false);
+});
+
+test('sabotage: reactor countdown + fix; cooldown; crew cannot sabotage', () => {
+  const g = mk();
+  g.startPlayRound(0);
+  const imp = impOf(g);
+  const crew = crewOf(g)[0];
+  assert.equal(g.canSabotage(imp, 100), false, 'initial sabotage cooldown');
+  assert.ok(g.triggerSabotage(imp, 'reactor', 9000).ok);
+  assert.equal(g.sabotage.type, 'reactor');
+  assert.equal(g.reactorExpired(9000 + 30000 + 1), true, 'reactor expires if not fixed');
+  assert.equal(g.canSabotage(imp, 9500), false, 'on cooldown after triggering');
+  assert.equal(g.triggerSabotage(crew, 'lights', 999999).ok, false, 'crew cannot sabotage');
+
+  const st = g.map.sab.reactor;
+  g.players[crew].x = st.x; g.players[crew].y = st.y;
+  assert.equal(g.fixNear(crew), 'reactor');
+  assert.ok(g.fixSabotage(crew).ok);
+  assert.equal(g.sabotage, null, 'reactor fixed');
+
+  assert.ok(g.triggerSabotage(imp, 'lights', 40000).ok, 'lights after cooldown');
+  assert.equal(g.sabotage.type, 'lights');
+  assert.equal(g.reactorExpired(999999), false, 'lights has no timeout');
 });
 
 test('voting out the imposter is a crew win; a tie ejects nobody', () => {

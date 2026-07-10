@@ -18,6 +18,9 @@ const TASKS_PER_PLAYER = 3;
 const TASK_TYPES = ['hold', 'tap'];
 const VENT_RANGE = 75;
 const TWO_IMPOSTERS_AT = 7; // players
+const SAB_COOLDOWN_MS = 25000;
+const REACTOR_MS = 30000;
+const FIX_RANGE = 110;
 
 function resolveCircleRect(p, r, rect) {
   const cx = Math.max(rect.x, Math.min(p.x, rect.x + rect.w));
@@ -57,6 +60,8 @@ class AmongUsGame {
     this.meetingEndAt = 0;
     this.revealEndAt = 0;
     this.realTaskTotal = 0;
+    this.sabotage = null;   // { type:'reactor'|'lights', endsAt?, station }
+    this.sabReadyAt = 0;
     this._assign(meta);
     this._assignTasks();
   }
@@ -139,6 +144,8 @@ class AmongUsGame {
   moveVent(slot, ventId) {
     const p = this.players[slot];
     if (!p || !p.vented) return { ok: false };
+    const cur = this.map.vents.find((x) => x.id === p.ventId);
+    if (!cur || !cur.to.includes(ventId)) return { ok: false }; // only adjacent vents
     const v = this.map.vents.find((x) => x.id === ventId);
     if (!v) return { ok: false };
     p.ventId = ventId; p.x = v.x; p.y = v.y;
@@ -150,6 +157,40 @@ class AmongUsGame {
     if (!p || !p.vented) return { ok: false };
     p.vented = false;
     return { ok: true };
+  }
+
+  // ---- sabotage ----
+  canSabotage(slot, now) {
+    const p = this.players[slot];
+    return this.phase === 'play' && p && p.alive && p.role === 'imposter'
+      && !this.sabotage && now >= this.sabReadyAt;
+  }
+
+  triggerSabotage(slot, kind, now) {
+    if (!this.canSabotage(slot, now)) return { ok: false };
+    if (kind === 'reactor') this.sabotage = { type: 'reactor', endsAt: now + REACTOR_MS, station: this.map.sab.reactor };
+    else if (kind === 'lights') this.sabotage = { type: 'lights', station: this.map.sab.lights };
+    else return { ok: false };
+    this.sabReadyAt = now + SAB_COOLDOWN_MS;
+    return { ok: true };
+  }
+
+  fixNear(slot) {
+    const p = this.players[slot];
+    if (!p || !this.sabotage) return null;
+    const s = this.sabotage.station;
+    return Math.hypot(p.x - s.x, p.y - s.y) <= FIX_RANGE ? this.sabotage.type : null;
+  }
+
+  fixSabotage(slot) {
+    const p = this.players[slot];
+    if (!p || !this.sabotage || !this.fixNear(slot)) return { ok: false };
+    this.sabotage = null;
+    return { ok: true };
+  }
+
+  reactorExpired(now) {
+    return !!(this.sabotage && this.sabotage.type === 'reactor' && now >= this.sabotage.endsAt);
   }
 
   taskNear(slot) {
@@ -226,6 +267,7 @@ class AmongUsGame {
     this.meetingEndAt = now + MEETING_MS;
     this.votes = {};
     this.killedThisMeeting = killedSlot || null;
+    this.sabotage = null; // meetings clear active sabotages
     for (const s of this.slots) { this.players[s].input = { x: 0, y: 0 }; this.players[s].vented = false; }
   }
 
@@ -288,6 +330,8 @@ class AmongUsGame {
   startPlayRound(now) {
     this.phase = 'play';
     this.killReadyAt = now + KILL_COOLDOWN_MS;
+    this.sabReadyAt = now + 8000;
+    this.sabotage = null;
     this.result = null;
     this.killedThisMeeting = null;
     this.votes = {};
@@ -299,6 +343,11 @@ class AmongUsGame {
       phase: this.phase,
       winner: this.winner,
       taskBar: this.taskProgress(),
+      sabotage: this.sabotage ? {
+        type: this.sabotage.type,
+        station: this.sabotage.station,
+        timeLeft: this.sabotage.type === 'reactor' ? Math.max(0, Math.ceil((this.sabotage.endsAt - now) / 1000)) : 0,
+      } : null,
       // vented imposters vanish from the shared map (so their identity stays hidden)
       players: this.slots.filter((s) => !this.players[s].vented).map((s) => {
         const p = this.players[s];
@@ -330,7 +379,20 @@ class AmongUsGame {
       out.tasksTotal = p.tasks.length;
       out.vented = p.vented;
       if (p.role === 'imposter' && p.alive && !p.vented) out.ventHere = this.ventNear(slot);
-      if (p.vented) out.vents = this.map.vents.map((v) => ({ id: v.id, label: v.label, current: v.id === p.ventId }));
+      if (p.vented) {
+        const cur = this.map.vents.find((v) => v.id === p.ventId);
+        const ids = cur ? [p.ventId, ...cur.to] : [p.ventId];
+        out.vents = ids.map((id) => {
+          const v = this.map.vents.find((x) => x.id === id);
+          return { id: v.id, label: v.label, current: v.id === p.ventId };
+        });
+      }
+      out.fixHere = this.fixNear(slot);
+      if (p.role === 'imposter' && p.alive && !p.vented) {
+        out.canSabotage = this.canSabotage(slot, now);
+        out.sabCooldown = Math.max(0, Math.ceil((this.sabReadyAt - now) / 1000));
+        out.sabActive = !!this.sabotage;
+      }
     } else if (this.phase === 'meeting') {
       out.candidates = this.aliveSlots().map((s) => ({ id: s, color: this.players[s].color }));
       out.canVote = p.alive;

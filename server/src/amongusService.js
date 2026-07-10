@@ -33,8 +33,10 @@ function tick(io, room) {
   if (!game) return;
   const now = Date.now();
 
-  if (game.phase === 'play') game.step(TICK_MS / 1000);
-  else if (game.phase === 'meeting' && game.shouldResolve(now)) game.resolveMeeting(now);
+  if (game.phase === 'play') {
+    game.step(TICK_MS / 1000);
+    if (game.reactorExpired(now)) { game.winner = 'imposter'; game.phase = 'over'; }
+  } else if (game.phase === 'meeting' && game.shouldResolve(now)) game.resolveMeeting(now);
   else if (game.phase === 'reveal' && game.revealDone(now)) game.startPlayRound(now);
 
   broadcast(io, room, now);
@@ -83,6 +85,8 @@ function handleAction(room, slot, payload = {}) {
   else if (payload.type === 'vent') game.enterVent(slot);
   else if (payload.type === 'vent_move') game.moveVent(slot, payload.ventId);
   else if (payload.type === 'vent_exit') game.exitVent(slot);
+  else if (payload.type === 'sabotage') game.triggerSabotage(slot, payload.kind, now);
+  else if (payload.type === 'fix') game.fixSabotage(slot);
 }
 
 function resendRole(io, room, slot) {

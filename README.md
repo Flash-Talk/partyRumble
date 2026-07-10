@@ -26,10 +26,12 @@ around with the joystick and do **task minigames**; the **imposter** kills
 nearby crewmates on a cooldown. A kill reveals the victim's name and opens an
 **emergency meeting** — everyone **votes live** (a color or Skip) to eject a
 suspect. **Crew win** by ejecting the imposter or finishing all tasks; the
-**imposter wins** at parity. Ghosts keep doing tasks. The imposter can also duck
-into **vents** to teleport across the map (and vanish from the shared screen),
-and games of **7+ players get two imposters** who know each other.
-Server-authoritative, so the imposter's identity never touches the TV.
+**imposter wins** at parity. Ghosts keep doing tasks. The imposter can **duck
+into vents** (jumping only between adjacent vents, and vanishing from the shared
+screen) and **sabotage** — kill the **Lights** for cover, or trigger a **Reactor
+meltdown** the crew must race to fix or lose. Games of **7+ players get two
+imposters** who know each other. Server-authoritative, so the imposter's identity
+never touches the TV.
 
 > **Sound:** the TV synthesizes music + SFX (no audio files). Browsers block
 > autoplay, so **press a key or tap the TV once** to enable sound.
