@@ -54,6 +54,9 @@ Open `http://localhost:3000/tv?debug=1`, join a phone (or another browser tab at
 - **Defend:** when you don't have the ball, block shots headed for your goal —
   the ball bounces off your disc, and a loose ball you touch becomes yours.
 - **Score:** put the ball in someone's goal → **+1 for you, −1 for them**.
+- **Power-ups:** icons spawn on the field — touch one with your disc for a few
+  seconds of ⚡ **Speed**, 🛡️ **Big Wall** (bigger blocker), 💥 **Power Shot**
+  (faster shots), or ❄️ **Freeze** (everyone else slows to a crawl).
 - **Win:** after **90 seconds**, best **goal difference** (scored − conceded)
   wins. A tie goes to **sudden death** — next goal decides.
 - **2–8 players:** the arena reshapes each round to however many joined (2 = a

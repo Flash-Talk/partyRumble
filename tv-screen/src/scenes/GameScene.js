@@ -2,7 +2,7 @@
 // loop (so the polygon arena's angled walls bounce correctly). Server only
 // relays input. Supports 2-8 players on an arena that fits the player count.
 import Net from '../net.js';
-import { DESIGN, CONFIG, SLOT_META, hexToNum } from '../config.js';
+import { DESIGN, CONFIG, SLOT_META, POWERUP_TYPES, hexToNum } from '../config.js';
 import { buildArena } from '../geometry.js';
 
 const { DISC_RADIUS: DR, BALL_RADIUS: BR } = CONFIG;
@@ -40,10 +40,19 @@ export default class GameScene extends Phaser.Scene {
     this.makeCircleTexture('discTex', DR);
     this.makeCircleTexture('ballTex', BR);
 
+    this.powerups = [];
+    this.freeze = { owner: null, until: 0 };
+
     this.drawField();
     this.createDiscs();
     this.createBall();
     this.createHud();
+
+    if (CONFIG.POWERUP.ENABLED) {
+      this.powerupTimer = this.time.addEvent({
+        delay: CONFIG.POWERUP.INTERVAL_MS, loop: true, callback: () => this.trySpawnPowerup(),
+      });
+    }
 
     this.cursors = this.input.keyboard.createCursorKeys();
     this.keyShoot = this.input.keyboard.addKey('SPACE');
@@ -113,16 +122,21 @@ export default class GameScene extends Phaser.Scene {
     this.state = {};
     for (const slot of this.slots) {
       const sp = this.arena.spawns[slot];
-      const disc = this.add.image(sp.x, sp.y, 'discTex').setTint(hexToNum(this.meta[slot].color));
+      const disc = this.add.image(sp.x, sp.y, 'discTex').setTint(hexToNum(this.meta[slot].color)).setDepth(3);
       const label = this.add.text(sp.x, sp.y, SLOT_META[slot].label, {
         fontFamily: 'system-ui, sans-serif', fontSize: '24px', fontStyle: 'bold', color: '#0a0e1a',
-      }).setOrigin(0.5);
+      }).setOrigin(0.5).setDepth(4);
+      const fxText = this.add.text(sp.x, sp.y, '', {
+        fontFamily: 'system-ui, sans-serif', fontSize: '26px',
+      }).setOrigin(0.5).setDepth(6);
       this.state[slot] = {
-        disc, label,
+        disc, label, fxText,
+        radius: DR,
         scored: 0, conceded: 0,
         cooldownUntil: 0, prevShoot: false,
         aim: this.autoAimFrom(sp, slot),
         discVel: { x: 0, y: 0 },
+        effects: { speed: 0, big: 0, power: 0 },
       };
     }
   }
@@ -193,25 +207,37 @@ export default class GameScene extends Phaser.Scene {
     const dt = Math.min(dtMs, 50) / 1000;
 
     this.moveDiscs(dt);
+    this.collectPowerups(t);
     if (!this.ballFrozen && dt > 0) this.simulateBall(dt, t);
 
     if (!this.suddenDeath && this.matchStarted && this.time.now >= this.matchEndAt) {
       this.handleTimeUp();
     }
     this.updateHud();
+    this.updateFx(t);
 
     for (const slot of this.slots) this.state[slot].prevShoot = this.getSlotInput(slot).shoot;
   }
 
   moveDiscs(dt) {
+    const t = this.time.now;
     for (const slot of this.slots) {
       const st = this.state[slot];
+
+      // Big Wall: grow the disc (affects blocking + trap reach).
+      st.radius = st.effects.big > t ? DR * CONFIG.POWERUP.BIG_MULT : DR;
+      st.disc.setScale(st.radius / DR);
+
       const inp = this.getSlotInput(slot);
       let vx = inp.x, vy = inp.y;
       const m = Math.hypot(vx, vy);
       if (m > 1) { vx /= m; vy /= m; }
 
-      const target = { x: st.disc.x + vx * CONFIG.MOVE_SPEED * dt, y: st.disc.y + vy * CONFIG.MOVE_SPEED * dt };
+      let speed = CONFIG.MOVE_SPEED;
+      if (st.effects.speed > t) speed *= CONFIG.POWERUP.SPEED_MULT;         // Speed Boost
+      if (this.freeze.until > t && this.freeze.owner !== slot) speed *= CONFIG.POWERUP.FREEZE_MULT; // Freeze
+
+      const target = { x: st.disc.x + vx * speed * dt, y: st.disc.y + vy * speed * dt };
       const c = this.arena.clamp(slot, target);
       st.discVel = dt > 0 ? { x: (c.x - st.disc.x) / dt, y: (c.y - st.disc.y) / dt } : { x: 0, y: 0 };
       st.disc.setPosition(c.x, c.y);
@@ -251,7 +277,7 @@ export default class GameScene extends Phaser.Scene {
       const st = this.state[slot];
       if (t < st.cooldownUntil) continue;
       const d = Math.hypot(this.ball.x - st.disc.x, this.ball.y - st.disc.y);
-      if (d <= DR + BR + CONFIG.TRAP_PAD && d < bestD) { best = slot; bestD = d; }
+      if (d <= st.radius + BR + CONFIG.TRAP_PAD && d < bestD) { best = slot; bestD = d; }
     }
     if (best) {
       this.heldBy = best;
@@ -273,7 +299,7 @@ export default class GameScene extends Phaser.Scene {
     if (am > 0.25) { st.aim = { x: ax / am, y: ay / am }; }
     else st.aim = this.autoAim(holder);
 
-    const off = DR + BR + CONFIG.HOLD_OFFSET;
+    const off = st.radius + BR + CONFIG.HOLD_OFFSET;
     this.ball.setPosition(st.disc.x + st.aim.x * off, st.disc.y + st.aim.y * off);
     this.bvel.x = 0; this.bvel.y = 0;
 
@@ -283,18 +309,19 @@ export default class GameScene extends Phaser.Scene {
   }
 
   shoot(slot, speed, t) {
-    const a = this.state[slot].aim;
-    this.bvel.x = a.x * speed;
-    this.bvel.y = a.y * speed;
+    const st = this.state[slot];
+    const mult = st.effects.power > t ? CONFIG.POWERUP.POWER_MULT : 1; // Power Shot
+    this.bvel.x = st.aim.x * speed * mult;
+    this.bvel.y = st.aim.y * speed * mult;
     this.lastTouch = slot;
-    this.state[slot].cooldownUntil = t + CONFIG.TRAP_COOLDOWN_MS;
+    st.cooldownUntil = t + CONFIG.TRAP_COOLDOWN_MS;
     this.heldBy = null;
   }
 
   collideDiscs() {
-    const minD = DR + BR;
     for (const slot of this.slots) {
       const st = this.state[slot];
+      const minD = st.radius + BR;
       const dx = this.ball.x - st.disc.x;
       const dy = this.ball.y - st.disc.y;
       const dist = Math.hypot(dx, dy);
@@ -415,13 +442,74 @@ export default class GameScene extends Phaser.Scene {
     return Math.hypot(this.bvel.x, this.bvel.y);
   }
 
+  // ---- power-ups -----------------------------------------------------------
+
+  trySpawnPowerup() {
+    if (this.over || !CONFIG.POWERUP.ENABLED) return;
+    if (this.powerups.length >= CONFIG.POWERUP.MAX_ON_FIELD || this.slots.length === 0) return;
+
+    const slot = this.slots[Phaser.Math.Between(0, this.slots.length - 1)];
+    const p = this.arena.randomPointInZone(slot);
+    const type = POWERUP_TYPES[Phaser.Math.Between(0, POWERUP_TYPES.length - 1)];
+
+    const circle = this.add.circle(p.x, p.y, CONFIG.POWERUP.RADIUS, hexToNum(type.color), 0.22)
+      .setStrokeStyle(3, hexToNum(type.color)).setDepth(1);
+    const icon = this.add.text(p.x, p.y, type.icon, {
+      fontFamily: 'system-ui, sans-serif', fontSize: '30px',
+    }).setOrigin(0.5).setDepth(2);
+
+    this.powerups.push({ x: p.x, y: p.y, type, circle, icon });
+  }
+
+  collectPowerups(t) {
+    for (let i = this.powerups.length - 1; i >= 0; i--) {
+      const pu = this.powerups[i];
+      for (const slot of this.slots) {
+        const st = this.state[slot];
+        if (Math.hypot(st.disc.x - pu.x, st.disc.y - pu.y) < st.radius + CONFIG.POWERUP.RADIUS) {
+          this.applyPowerup(slot, pu.type, t);
+          pu.circle.destroy(); pu.icon.destroy();
+          this.powerups.splice(i, 1);
+          break;
+        }
+      }
+    }
+  }
+
+  applyPowerup(slot, type, t) {
+    const st = this.state[slot];
+    if (type.key === 'speed') st.effects.speed = t + CONFIG.POWERUP.DURATION_MS;
+    else if (type.key === 'big') st.effects.big = t + CONFIG.POWERUP.DURATION_MS;
+    else if (type.key === 'power') st.effects.power = t + CONFIG.POWERUP.DURATION_MS;
+    else if (type.key === 'freeze') this.freeze = { owner: slot, until: t + CONFIG.POWERUP.FREEZE_MS };
+    this.showBanner(`${this.meta[slot].name}  ${type.icon} ${type.name}`, this.meta[slot].color, 900);
+  }
+
+  updateFx(t) {
+    for (const slot of this.slots) {
+      const st = this.state[slot];
+      if (!st.fxText) continue;
+      let s = '';
+      if (st.effects.speed > t) s += '⚡';
+      if (st.effects.big > t) s += '🛡';
+      if (st.effects.power > t) s += '💥';
+      if (this.freeze.until > t && this.freeze.owner !== slot) s += '❄';
+      st.fxText.setText(s);
+      st.fxText.setPosition(st.disc.x, st.disc.y - st.radius - 20);
+    }
+  }
+
   removeSlot(slot) {
     const i = this.slots.indexOf(slot);
     if (i === -1) return;
     this.slots.splice(i, 1);
     if (this.heldBy === slot) this.heldBy = null;
     const st = this.state[slot];
-    if (st) { st.disc.destroy(); st.label.destroy(); delete this.state[slot]; }
+    if (st) {
+      st.disc.destroy(); st.label.destroy();
+      if (st.fxText) st.fxText.destroy();
+      delete this.state[slot];
+    }
     if (this.hudRows[slot]) { this.hudRows[slot].text.setText(''); this.hudRows[slot].swatch.setVisible(false); }
   }
 

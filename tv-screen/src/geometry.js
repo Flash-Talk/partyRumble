@@ -89,6 +89,23 @@ class Arena {
     return this.goalMids[slot];
   }
 
+  // A random reachable point inside a player's zone (for spawning power-ups).
+  randomPointInZone(slot) {
+    const poly = this.zones[slot];
+    let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+    for (const p of poly) {
+      minx = Math.min(minx, p.x); maxx = Math.max(maxx, p.x);
+      miny = Math.min(miny, p.y); maxy = Math.max(maxy, p.y);
+    }
+    for (let i = 0; i < 40; i++) {
+      const q = { x: minx + Math.random() * (maxx - minx), y: miny + Math.random() * (maxy - miny) };
+      if (pointInConvexPolygon(q, poly)) return q;
+    }
+    const cx = poly.reduce((s, p) => s + p.x, 0) / poly.length;
+    const cy = poly.reduce((s, p) => s + p.y, 0) / poly.length;
+    return { x: cx, y: cy };
+  }
+
   // Goal opening endpoints for an owner edge (for drawing).
   goalSegment(edge) {
     return [lerp(edge.A, edge.B, edge.t0), lerp(edge.A, edge.B, edge.t1)];

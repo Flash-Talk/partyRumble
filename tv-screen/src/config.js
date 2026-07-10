@@ -4,7 +4,7 @@
 export const DESIGN = { W: 1920, H: 1080 };
 
 export const CONFIG = {
-  ARENA_RADIUS: 470,      // circumradius of the polygon arena (fits 1080 height)
+  ARENA_RADIUS: 510,      // circumradius of the polygon arena (fits 1080 height)
   WEDGE_MARGIN: 40,       // inset of each player's zone (keeps discs off walls/apex)
   GOAL_FRACTION: 0.52,    // goal opening as a fraction of each polygon edge
   DISC_RADIUS: 32,
@@ -29,7 +29,28 @@ export const CONFIG = {
 
   MIN_PLAYERS: 2,
   MAX_PLAYERS: 8,
+
+  POWERUP: {
+    ENABLED: true,
+    INTERVAL_MS: 7000,   // spawn attempt cadence
+    MAX_ON_FIELD: 2,
+    RADIUS: 26,
+    DURATION_MS: 6000,   // speed / big / power last this long
+    FREEZE_MS: 4000,     // freeze is shorter (it's strong)
+    SPEED_MULT: 1.85,    // movement speed while boosted
+    BIG_MULT: 1.7,       // disc radius while enlarged
+    POWER_MULT: 1.5,     // shot speed while powered
+    FREEZE_MULT: 0.28,   // frozen players' movement speed
+  },
 };
+
+// Power-up types. Color distinguishes them even where the emoji doesn't render.
+export const POWERUP_TYPES = [
+  { key: 'speed',  icon: '⚡', color: '#fde047', name: 'Speed' },
+  { key: 'big',    icon: '🛡', color: '#60a5fa', name: 'Big Wall' },
+  { key: 'power',  icon: '💥', color: '#fb7185', name: 'Power Shot' },
+  { key: 'freeze', icon: '❄', color: '#7dd3fc', name: 'Freeze' },
+];
 
 export const SLOT_ORDER = [
   'player_1', 'player_2', 'player_3', 'player_4',
