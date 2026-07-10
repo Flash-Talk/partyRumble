@@ -7,13 +7,13 @@
 
 const { MAP } = require('./map');
 
-const SPEED = 330;
+const SPEED = 385;              // a touch faster for the bigger map
 const RADIUS = 26;
-const KILL_RANGE = 100;
-const KILL_COOLDOWN_MS = 15000;
+const KILL_RANGE = 110;
+const KILL_COOLDOWN_MS = 12000; // shorter -> more action
 const MEETING_MS = 30000;
 const REVEAL_MS = 4500;
-const TASK_RANGE = 95;
+const TASK_RANGE = 105;
 const TASKS_PER_PLAYER = 3;
 const TASK_TYPES = ['hold', 'tap'];
 

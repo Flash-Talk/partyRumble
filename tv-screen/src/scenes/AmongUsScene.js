@@ -1,11 +1,16 @@
-// TV view of an Among Us round (Phase 1: map + anonymous moving characters).
-// Renders only the server's public state — it never learns who the imposter is.
+// TV view of an Among Us round. Renders only the server's public state — it
+// never learns who the imposter is.
 import Net from '../net.js';
 import audio from '../audio.js';
 import { DESIGN, hexToNum } from '../config.js';
 
-const MX = 160; // map-space -> screen offset (map is 1600x1000, centered in 1920x1080)
-const MY = 40;
+function darken(hex, f) {
+  const n = parseInt(String(hex).replace('#', ''), 16);
+  const r = Math.floor(((n >> 16) & 255) * f);
+  const g = Math.floor(((n >> 8) & 255) * f);
+  const b = Math.floor((n & 255) * f);
+  return (r << 16) | (g << 8) | b;
+}
 
 export default class AmongUsScene extends Phaser.Scene {
   constructor() {
@@ -17,6 +22,8 @@ export default class AmongUsScene extends Phaser.Scene {
     this.avatars = new Map();
     this.overlayObjs = [];
     this.mapDrawn = false;
+    this.mx = 40;
+    this.my = 40;
     this._prevAlive = {};
     this._prevPhase = 'play';
     this._prevVotes = 0;
@@ -33,6 +40,12 @@ export default class AmongUsScene extends Phaser.Scene {
     this.taskBarText = this.add.text(DESIGN.W / 2, 58, 'TASKS 0%', {
       fontFamily: 'system-ui, sans-serif', fontSize: '20px', fontStyle: 'bold', color: '#eef1f7',
     }).setOrigin(0.5).setDepth(32);
+
+    // "get ready" intro
+    const gr = this.add.text(DESIGN.W / 2, DESIGN.H / 2, 'GET READY', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '90px', fontStyle: 'bold', color: '#eef1f7',
+    }).setOrigin(0.5).setDepth(45);
+    this.tweens.add({ targets: gr, alpha: 0, delay: 1600, duration: 800, onComplete: () => gr.destroy() });
 
     this.onStart = (map) => this.drawMap(map);
     this.onState = (state) => this.renderState(state);
@@ -53,34 +66,53 @@ export default class AmongUsScene extends Phaser.Scene {
   drawMap(map) {
     if (this.mapDrawn) return;
     this.mapDrawn = true;
+    this.mx = Math.round((DESIGN.W - map.w) / 2);
+    this.my = Math.round((DESIGN.H - map.h) / 2);
     const g = this.add.graphics().setDepth(0);
-    // floor
     g.fillStyle(0x141a2e, 1);
-    g.fillRoundedRect(MX, MY, map.w, map.h, 24);
-    g.lineStyle(3, 0x263056, 1);
-    g.strokeRoundedRect(MX, MY, map.w, map.h, 24);
-    // walls
-    g.fillStyle(0x2a3350, 1);
-    for (const w of map.walls) g.fillRoundedRect(MX + w.x, MY + w.y, w.w, w.h, 8);
-    // task stations (decorative for now)
-    g.fillStyle(0x3b466f, 1);
-    for (const t of map.tasks || []) g.fillCircle(MX + t.x, MY + t.y, 14);
+    g.fillRoundedRect(this.mx, this.my, map.w, map.h, 26);
+    g.lineStyle(3, 0x2b3560, 1);
+    g.strokeRoundedRect(this.mx, this.my, map.w, map.h, 26);
+    g.fillStyle(0x323d63, 1);
+    for (const w of map.walls) g.fillRoundedRect(this.mx + w.x, this.my + w.y, w.w, w.h, 8);
+    // task stations
+    for (const t of map.tasks || []) {
+      g.fillStyle(0x3b466f, 1);
+      g.fillCircle(this.mx + t.x, this.my + t.y, 16);
+      g.lineStyle(3, 0x64d2ff, 0.7);
+      g.strokeCircle(this.mx + t.x, this.my + t.y, 16);
+    }
   }
 
   makeAvatar(color) {
     const c = hexToNum(color);
+    const dark = darken(color, 0.6);
     const cont = this.add.container(0, 0).setDepth(10);
-    const backpack = this.add.ellipse(-16, 2, 16, 30, c).setAlpha(0.9);
-    const body = this.add.ellipse(0, 0, 44, 52, c);
-    const visor = this.add.ellipse(6, -8, 26, 15, 0xa5d8ff).setStrokeStyle(2, 0x2b3a55);
-    const label = this.add.text(0, 40, '', {
-      fontFamily: 'system-ui, sans-serif', fontSize: '22px', fontStyle: 'bold', color: '#eef1f7',
+
+    const shadow = this.add.ellipse(0, 34, 50, 15, 0x000000, 0.28);
+    const legL = this.add.rectangle(-11, 28, 13, 14, dark).setOrigin(0.5, 0);
+    const legR = this.add.rectangle(10, 28, 13, 14, dark).setOrigin(0.5, 0);
+
+    const g = this.add.graphics();
+    const body = { tl: 24, tr: 24, bl: 11, br: 11 };
+    g.fillStyle(dark, 1); g.fillRoundedRect(-32, -14, 15, 32, 7);      // backpack
+    g.fillStyle(c, 1); g.fillRoundedRect(-24, -32, 48, 60, body);       // body
+    g.lineStyle(3, dark, 1); g.strokeRoundedRect(-24, -32, 48, 60, body);
+    g.fillStyle(0x9ad2ff, 1); g.fillRoundedRect(-4, -20, 28, 15, 8);    // visor
+    g.lineStyle(3, dark, 1); g.strokeRoundedRect(-4, -20, 28, 15, 8);
+    g.fillStyle(0xffffff, 0.85); g.fillCircle(16, -15, 3);             // visor glint
+    const bodyGroup = this.add.container(0, 0, [g]);
+
+    const label = this.add.text(0, 42, '', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '22px', fontStyle: 'bold', color: '#cbd3e6',
     }).setOrigin(0.5, 0);
-    cont.add([backpack, body, visor, label]);
-    cont.label = label;
-    cont.body2 = body;
-    cont.visor = visor;
-    cont.pack = backpack;
+
+    cont.add([shadow, legL, legR, bodyGroup, label]);
+    cont.parts = { shadow, legL, legR, bodyGroup, label };
+    cont.walkPhase = 0;
+    cont.facing = 1;
+    cont.prevX = null;
+    cont.prevY = null;
     return cont;
   }
 
@@ -91,10 +123,10 @@ export default class AmongUsScene extends Phaser.Scene {
       this.taskBarText.setText(`TASKS ${Math.round(t * 100)}%`);
     }
 
-    // audio cues
+    // audio + kill flash on a fresh death
     for (const p of state.players) {
       if (this._prevAlive[p.id] === undefined) this._prevAlive[p.id] = p.alive;
-      if (this._prevAlive[p.id] && !p.alive) audio.sfx('kill');
+      if (this._prevAlive[p.id] && !p.alive) { audio.sfx('kill'); this.killFlash(this.mx + p.x, this.my + p.y); }
       this._prevAlive[p.id] = p.alive;
     }
     if (state.phase === 'meeting' && this._prevPhase !== 'meeting') audio.sfx('meeting');
@@ -102,39 +134,49 @@ export default class AmongUsScene extends Phaser.Scene {
       const total = Object.values(state.meeting.tally.counts).reduce((a, b) => a + b, 0) + (state.meeting.tally.skip || 0);
       if (total > this._prevVotes) audio.sfx('ding');
       this._prevVotes = total;
-    } else {
-      this._prevVotes = 0;
-    }
+    } else { this._prevVotes = 0; }
     this._prevPhase = state.phase;
 
+    // avatars
     const seen = new Set();
     for (const p of state.players) {
       seen.add(p.id);
       let av = this.avatars.get(p.id);
       if (!av) { av = this.makeAvatar(p.color); this.avatars.set(p.id, av); }
-      av.setPosition(MX + p.x, MY + p.y);
+      const sx = this.mx + p.x, sy = this.my + p.y;
 
-      if (p.alive) {
-        av.setAlpha(1);
-        av.label.setText('');           // anonymous while alive
-        av.body2.setAngle(0);
+      const dx = av.prevX === null ? 0 : sx - av.prevX;
+      const dy = av.prevY === null ? 0 : sy - av.prevY;
+      const moving = Math.abs(dx) + Math.abs(dy) > 0.4;
+      if (Math.abs(dx) > 0.5) av.facing = dx < 0 ? -1 : 1;
+      av.prevX = sx; av.prevY = sy;
+      av.setPosition(sx, sy);
+      av.parts.bodyGroup.scaleX = av.facing;
+
+      if (moving && p.alive) {
+        av.walkPhase += 0.4;
+        av.parts.bodyGroup.y = -Math.abs(Math.sin(av.walkPhase) * 3);
+        av.parts.legL.y = 28 + Math.max(0, Math.sin(av.walkPhase)) * 5;
+        av.parts.legR.y = 28 + Math.max(0, -Math.sin(av.walkPhase)) * 5;
       } else {
-        av.setAlpha(0.55);
-        av.body2.setAngle(90);           // fallen
-        av.visor.setVisible(false);
-        av.label.setText(`${p.name}\nKILLED`);
-        av.label.setColor('#ff6b6b');
+        av.parts.bodyGroup.y = 0; av.parts.legL.y = 28; av.parts.legR.y = 28;
       }
+
+      if (p.alive) { av.setAlpha(1); av.parts.label.setText(''); }
+      else { av.setAlpha(0.4); av.parts.label.setText(p.name); }
     }
-    // drop avatars for players who left
     for (const [id, av] of this.avatars) {
       if (!seen.has(id)) { av.destroy(); this.avatars.delete(id); }
     }
 
-    // meeting / reveal overlays
     this.clearOverlay();
     if (state.phase === 'meeting' && state.meeting) this.drawMeeting(state.meeting);
     else if (state.phase === 'reveal' && state.result) this.drawReveal(state.result);
+  }
+
+  killFlash(x, y) {
+    const c = this.add.circle(x, y, 24, 0xff3b3b, 0.6).setDepth(20);
+    this.tweens.add({ targets: c, scale: 4, alpha: 0, duration: 500, onComplete: () => c.destroy() });
   }
 
   clearOverlay() {
