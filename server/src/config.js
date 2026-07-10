@@ -1,6 +1,7 @@
 // Server configuration. Room/player lifecycle only — no gameplay state lives here.
 module.exports = {
   MAX_PLAYERS: 8,
+  MIN_PLAYERS_UNO: 2,
 
   // Hold a disconnected player's slot this long before freeing it (spec: 30s).
   DISCONNECT_GRACE_MS: 30_000,

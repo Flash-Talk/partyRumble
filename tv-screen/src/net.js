@@ -57,6 +57,15 @@ class Net {
         s.shoot = !!value;
       }
     });
+
+    // UNO (server-authoritative): the TV just renders public state.
+    this.unoState = null;
+    this.socket.on('uno_state', (state) => { this.unoState = state; this.events.emit('uno_state', state); });
+    this.socket.on('uno_over', (data) => { this.unoState = null; this.events.emit('uno_over', data); });
+  }
+
+  startUno() {
+    if (this.socket) this.socket.emit('start_uno');
   }
 
   getInput(slot) {

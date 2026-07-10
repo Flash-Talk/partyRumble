@@ -3,6 +3,7 @@ import BootScene from './scenes/BootScene.js';
 import LobbyScene from './scenes/LobbyScene.js';
 import GameScene from './scenes/GameScene.js';
 import ResultScene from './scenes/ResultScene.js';
+import UnoScene from './scenes/UnoScene.js';
 import Net from './net.js';
 import { DESIGN } from './config.js';
 
@@ -16,7 +17,7 @@ const game = new Phaser.Game({
     width: DESIGN.W,
     height: DESIGN.H,
   },
-  scene: [BootScene, LobbyScene, GameScene, ResultScene],
+  scene: [BootScene, LobbyScene, GameScene, ResultScene, UnoScene],
 });
 
 // Opt-in debug handles for automated smoke tests (only with ?debug in the URL).

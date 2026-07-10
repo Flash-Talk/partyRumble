@@ -13,6 +13,12 @@ export default class LobbyScene extends Phaser.Scene {
     this.prevAnyShoot = true; // ignore a shoot already held from a previous screen
     this.counting = false;
     this.spaceKey = this.input.keyboard.addKey('SPACE');
+    this.keyLeft = this.input.keyboard.addKey('LEFT');
+    this.keyRight = this.input.keyboard.addKey('RIGHT');
+
+    this.games = [{ key: 'penalty', name: 'Penalty Rumble' }, { key: 'uno', name: 'UNO' }];
+    this.gameIndex = 0;
+    this.tiltLatch = false;
 
     this.add.text(DESIGN.W / 2, 70, 'PENALTY RUMBLE', {
       fontFamily: 'system-ui, sans-serif', fontSize: '78px', fontStyle: 'bold', color: '#eef1f7',
@@ -59,7 +65,19 @@ export default class LobbyScene extends Phaser.Scene {
       this.slotTexts[slot] = t;
     });
 
-    this.startHint = this.add.text(DESIGN.W / 2, 1012, '', {
+    // Game selector (any player tilts ‹ / › to switch).
+    this.add.text(DESIGN.W / 2, 858, 'GAME', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '26px', color: '#8b93a7',
+    }).setOrigin(0.5);
+    this.gameLabel = this.add.text(DESIGN.W / 2, 912, '', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '48px', fontStyle: 'bold', color: '#64d2ff',
+    }).setOrigin(0.5);
+    this.add.text(DESIGN.W / 2, 958, 'tilt ‹ › on any phone to switch', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '22px', color: '#8b93a7',
+    }).setOrigin(0.5);
+    this.updateGameLabel();
+
+    this.startHint = this.add.text(DESIGN.W / 2, 1016, '', {
       fontFamily: 'system-ui, sans-serif', fontSize: '38px', fontStyle: 'bold', color: '#4ade80',
     }).setOrigin(0.5);
 
@@ -87,7 +105,20 @@ export default class LobbyScene extends Phaser.Scene {
 
   update() {
     let anyShoot = this.spaceKey.isDown;
-    for (const slot of Net.players.keys()) if (Net.getInput(slot).shoot) anyShoot = true;
+    let tilt = 0;
+    for (const slot of Net.players.keys()) {
+      const inp = Net.getInput(slot);
+      if (inp.shoot) anyShoot = true;
+      if (Math.abs(inp.x) > Math.abs(tilt)) tilt = inp.x;
+    }
+    if (this.keyRight.isDown) tilt = 1; else if (this.keyLeft.isDown) tilt = -1;
+
+    // Cycle the selected game on a fresh tilt.
+    if (!this.counting) {
+      if (tilt > 0.5 && !this.tiltLatch) { this.cycleGame(1); this.tiltLatch = true; }
+      else if (tilt < -0.5 && !this.tiltLatch) { this.cycleGame(-1); this.tiltLatch = true; }
+      else if (Math.abs(tilt) < 0.3) this.tiltLatch = false;
+    }
 
     if (!this.counting && anyShoot && !this.prevAnyShoot && Net.players.size >= CONFIG.MIN_PLAYERS) {
       this.startCountdown();
@@ -95,13 +126,28 @@ export default class LobbyScene extends Phaser.Scene {
     this.prevAnyShoot = anyShoot;
   }
 
+  cycleGame(d) {
+    this.gameIndex = (this.gameIndex + d + this.games.length) % this.games.length;
+    this.updateGameLabel();
+  }
+
+  updateGameLabel() {
+    this.gameLabel.setText(`‹   ${this.games[this.gameIndex].name}   ›`);
+  }
+
+  startSelectedGame() {
+    const g = this.games[this.gameIndex];
+    if (g.key === 'uno') { Net.startUno(); this.scene.start('UnoScene'); }
+    else this.scene.start('GameScene');
+  }
+
   startCountdown() {
     this.counting = true;
     let n = 3;
     const tick = () => {
       if (Net.players.size < CONFIG.MIN_PLAYERS) { this.counting = false; this.refreshRoster(); return; }
-      if (n <= 0) { this.scene.start('GameScene'); return; }
-      this.startHint.setText(`Starting in ${n}…`).setColor('#eef1f7');
+      if (n <= 0) { this.startSelectedGame(); return; }
+      this.startHint.setText(`Starting ${this.games[this.gameIndex].name} in ${n}…`).setColor('#eef1f7');
       n -= 1;
       this.time.delayedCall(700, tick);
     };

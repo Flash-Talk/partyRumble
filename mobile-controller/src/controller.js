@@ -189,5 +189,116 @@ shootBtn.addEventListener('touchcancel', (e) => { e.preventDefault(); setShoot(f
 shootBtn.addEventListener('mousedown', () => setShoot(true));
 window.addEventListener('mouseup', () => shootBtn.classList.contains('pressed') && setShoot(false));
 
+// ---- UNO mode ----
+const unoEl = $('uno');
+const unoTurn = $('unoTurn');
+const unoTopCard = $('unoTopCard');
+const unoColor = $('unoColor');
+const unoHand = $('unoHand');
+const unoMsg = $('unoMsg');
+const unoDraw = $('unoDraw');
+const unoPass = $('unoPass');
+const unoUno = $('unoUno');
+const colorPicker = $('colorPicker');
+
+const UNO_COLORS = { red: '#ef4444', yellow: '#eab308', green: '#22c55e', blue: '#3b82f6' };
+const unoColorHex = (c) => UNO_COLORS[c] || '#9aa4bf';
+function unoSymbol(kind) {
+  if (/^[0-9]$/.test(kind)) return kind;
+  return { skip: 'Ø', reverse: '⇄', draw2: '+2', wild: '★', wild4: '+4' }[kind] || kind;
+}
+
+let pendingWild = null;
+
+socket.on('uno_hand', (h) => enterUno(h));
+socket.on('uno_over', (d) => exitUno(d));
+socket.on('uno_error', ({ message }) => {
+  unoMsg.textContent = message || '';
+  setTimeout(() => { if (unoMsg.textContent === message) unoMsg.textContent = ''; }, 1500);
+});
+
+function enterUno(h) {
+  joinEl.style.display = 'none';
+  controllerEl.style.display = 'none';
+  unoEl.style.display = 'flex';
+  renderUno(h);
+}
+function exitUno() {
+  unoEl.style.display = 'none';
+  controllerEl.style.display = 'flex';
+  unoMsg.textContent = '';
+  colorPicker.classList.remove('show');
+}
+
+function turnName(st) {
+  const p = st.players.find((x) => x.slot === st.currentSlot);
+  return p ? p.name : '…';
+}
+
+function styleCard(el, card) {
+  el.textContent = unoSymbol(card.kind);
+  if (card.color === 'wild') { el.classList.add('wildcard'); el.style.background = ''; }
+  else { el.classList.remove('wildcard'); el.style.background = unoColorHex(card.color); }
+}
+
+function renderUno(h) {
+  const st = h.state;
+  unoTurn.textContent = h.yourTurn ? 'YOUR TURN' : `${turnName(st)}'s turn`;
+  unoTurn.className = h.yourTurn ? 'your-turn' : '';
+
+  const top = st.topCard;
+  unoTopCard.textContent = unoSymbol(top.kind);
+  unoTopCard.classList.remove('wildcard');
+  unoTopCard.style.background = unoColorHex(top.color === 'wild' ? st.currentColor : top.color);
+  unoColor.textContent = st.pendingDraw > 0 ? `+${st.pendingDraw}!` : st.currentColor;
+  unoColor.style.color = unoColorHex(st.currentColor);
+
+  const playable = new Set(h.playableIds);
+  unoHand.innerHTML = '';
+  h.cards.forEach((c) => {
+    const el = document.createElement('div');
+    el.className = 'card';
+    styleCard(el, c);
+    if (h.yourTurn && playable.has(c.id)) {
+      el.classList.add('legal');
+      el.addEventListener('touchstart', (e) => { e.preventDefault(); onCardTap(c); }, { passive: false });
+      el.addEventListener('click', () => onCardTap(c));
+    } else if (h.yourTurn) {
+      el.classList.add('illegal');
+    }
+    unoHand.appendChild(el);
+  });
+
+  unoDraw.disabled = !h.canDraw;
+  unoPass.style.display = h.canPass ? '' : 'none';
+  unoUno.style.display = h.canCallUno ? '' : 'none';
+}
+
+function onCardTap(card) {
+  if (card.kind === 'wild' || card.kind === 'wild4') { pendingWild = card; colorPicker.classList.add('show'); }
+  else socket.emit('uno_action', { action: 'play', cardId: card.id });
+}
+
+colorPicker.querySelectorAll('.cp').forEach((btn) => {
+  const pick = (e) => {
+    if (e) e.preventDefault();
+    if (!pendingWild) return;
+    socket.emit('uno_action', { action: 'play', cardId: pendingWild.id, color: btn.dataset.color });
+    pendingWild = null;
+    colorPicker.classList.remove('show');
+  };
+  btn.addEventListener('touchstart', pick, { passive: false });
+  btn.addEventListener('click', pick);
+});
+
+function bindUno(btn, action, guard) {
+  const fire = (e) => { if (e) e.preventDefault(); if (guard && guard()) return; socket.emit('uno_action', { action }); };
+  btn.addEventListener('touchstart', fire, { passive: false });
+  btn.addEventListener('click', fire);
+}
+bindUno(unoDraw, 'draw', () => unoDraw.disabled);
+bindUno(unoPass, 'pass');
+bindUno(unoUno, 'uno');
+
 // ---- boot ----
 initJoinScreen();

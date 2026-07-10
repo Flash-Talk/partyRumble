@@ -100,6 +100,59 @@
     #shootBtn.pressed { filter: brightness(0.85); transform: scale(0.97); }
 
     .divider { width: 1px; background: rgba(255,255,255,0.06); }
+
+    /* ---- UNO ---- */
+    #uno { position: absolute; inset: 0; z-index: 15; display: none; flex-direction: column; background: var(--bg); }
+    #unoTop {
+      flex: 0 0 auto; display: flex; align-items: center; gap: 14px;
+      padding: 10px 14px; background: rgba(0,0,0,0.28);
+    }
+    #unoTurn { font-size: 20px; font-weight: 800; }
+    #unoTurn.your-turn { color: #4ade80; }
+    #unoPile { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+    #unoColor { font-weight: 800; text-transform: uppercase; font-size: 14px; }
+    #unoMsg { min-height: 20px; text-align: center; color: #ff6b6b; font-size: 14px; padding: 2px; }
+
+    .card {
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 900; color: #fff; border-radius: 12px;
+      box-shadow: inset 0 0 0 3px rgba(255,255,255,0.85);
+      text-shadow: 0 1px 3px rgba(0,0,0,0.4); user-select: none;
+    }
+    .card.wildcard { background: conic-gradient(#ef4444 0 25%, #eab308 0 50%, #22c55e 0 75%, #3b82f6 0); }
+    /* top-card preview */
+    #unoTopCard { width: 54px; height: 76px; font-size: 26px; }
+
+    #unoHand {
+      flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y;
+      display: flex; flex-wrap: wrap; align-content: flex-start; gap: 10px; padding: 14px; justify-content: center;
+    }
+    #unoHand .card { width: 74px; height: 104px; font-size: 34px; }
+    #unoHand .card.legal { box-shadow: inset 0 0 0 3px #fff, 0 0 0 3px #4ade80, 0 6px 14px rgba(74,222,128,0.35); transform: translateY(-4px); }
+    #unoHand .card.illegal { opacity: 0.4; }
+
+    #unoActions { flex: 0 0 auto; display: flex; gap: 10px; padding: 12px 14px calc(12px + env(safe-area-inset-bottom)); }
+    .ubtn {
+      flex: 1; padding: 16px; font-size: 20px; font-weight: 800; border: none; border-radius: 14px;
+      background: #263056; color: #eef1f7;
+    }
+    .ubtn:disabled { opacity: 0.4; }
+    .ubtn.uno { background: #ef4444; color: #fff; }
+    .ubtn:active:not(:disabled) { transform: translateY(1px); filter: brightness(0.95); }
+
+    #colorPicker {
+      position: absolute; inset: 0; z-index: 16; display: none;
+      flex-direction: column; align-items: center; justify-content: center; gap: 20px;
+      background: rgba(6,10,22,0.92);
+    }
+    #colorPicker.show { display: flex; }
+    .cp-title { font-size: 24px; font-weight: 800; }
+    .cp-row { display: flex; gap: 16px; }
+    .cp { width: 84px; height: 120px; border: 3px solid #fff; border-radius: 14px; }
+    .cp[data-color="red"] { background: #ef4444; }
+    .cp[data-color="yellow"] { background: #eab308; }
+    .cp[data-color="green"] { background: #22c55e; }
+    .cp[data-color="blue"] { background: #3b82f6; }
   </style>
 </head>
 <body>
@@ -140,6 +193,33 @@
       <div class="divider"></div>
       <div id="shootZone">
         <div id="shootBtn">SHOOT</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- UNO card UI (shown only during an UNO round) -->
+  <section id="uno">
+    <div id="unoTop">
+      <span id="unoTurn">—</span>
+      <div id="unoPile">
+        <div id="unoTopCard" class="card"></div>
+        <span id="unoColor"></span>
+      </div>
+    </div>
+    <div id="unoMsg"></div>
+    <div id="unoHand"></div>
+    <div id="unoActions">
+      <button id="unoDraw" class="ubtn">DRAW</button>
+      <button id="unoPass" class="ubtn" style="display:none">PASS</button>
+      <button id="unoUno" class="ubtn uno" style="display:none">UNO!</button>
+    </div>
+    <div id="colorPicker">
+      <div class="cp-title">Pick a color</div>
+      <div class="cp-row">
+        <button class="cp" data-color="red"></button>
+        <button class="cp" data-color="yellow"></button>
+        <button class="cp" data-color="green"></button>
+        <button class="cp" data-color="blue"></button>
       </div>
     </div>
   </section>

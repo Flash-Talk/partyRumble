@@ -1,11 +1,22 @@
-# Penalty Rumble 🥅⚽
+# Party Games 🎮 (TV + phones)
 
-A party game for a TV + phones, **2–8 players**. The **TV** is a shared arena that
-reshapes to the player count — a regular polygon (triangle → … → octagon) where
-each player owns one side (their goal) and an equal wedge. Each player's **phone**
-is a wireless joystick. When the ball is in your zone you attack and shoot at
-everyone else's goal; when it isn't, you're the goalie. Timed match,
-**best goal difference wins**.
+A little **party-game platform** — one shared TV screen, everyone's phone is the
+controller, **2–8 players**. In the lobby, tilt **‹ / ›** on any phone to pick a
+game, then press **SHOOT** to start:
+
+### 🥅 Penalty Rumble
+The **TV** is a shared arena that reshapes to the player count — a regular polygon
+(triangle → … → octagon) where each player owns one side (their goal) and an equal
+wedge. Your **phone** is a joystick. When the ball is in your zone you attack and
+shoot at everyone else's goal; when it isn't, you're the goalie. Timed match,
+**best goal difference wins**. Grab power-ups for ⚡/🛡️/💥/❄️ effects.
+
+### 🎴 UNO
+Classic UNO. The **TV** shows the pile, deck, current color, direction, and each
+player's card count; your **phone** holds your **private hand** — tap a card to
+play it, draw, or call **UNO!**. Stacking Draw Two/Four, and a +2 penalty if you
+forget to call UNO. First to empty their hand wins. The server runs the game
+(so nobody can peek at your cards, and reconnects resume your hand).
 
 Built on the platform described in [`partyGame.md`](./partyGame.md): a Node +
 socket.io relay server, a Phaser TV screen, and a vanilla-JS phone controller.

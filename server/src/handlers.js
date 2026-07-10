@@ -1,9 +1,10 @@
 'use strict';
 
+const uno = require('./unoService');
+
 /**
- * Wire socket.io events to the RoomManager. The server is a thin relay:
- * it owns room/player lifecycle and forwards controller input to the TV,
- * but never simulates the game.
+ * Wire socket.io events to the RoomManager. The server relays controller input
+ * for Penalty Rumble (the TV simulates it), but is authoritative for UNO.
  *
  * @param {import('socket.io').Server} io
  * @param {import('./RoomManager')} rooms
@@ -73,6 +74,22 @@ function registerHandlers(io, rooms) {
         name: player.name,
         color: player.color,
       });
+
+      // Rejoined mid-UNO round? Push this player's hand so their UI resumes.
+      if (room.unoGame) uno.resendHand(io, room, player.slot);
+    });
+
+    // --- UNO: TV starts a round; players act -------------------------------
+    socket.on('start_uno', () => {
+      if (socket.data.role !== 'tv') return;
+      const room = rooms.getRoom(socket.data.roomCode);
+      if (room) uno.startUno(io, room);
+    });
+
+    socket.on('uno_action', (payload) => {
+      if (socket.data.role !== 'player') return;
+      const room = rooms.getRoom(socket.data.roomCode);
+      if (room) uno.handleUnoAction(io, room, socket.data.slot, payload || {});
     });
 
     // --- Controller input -> relayed to the TV as game_input --------------

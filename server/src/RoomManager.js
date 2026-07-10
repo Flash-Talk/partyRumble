@@ -36,6 +36,8 @@ class RoomManager {
       players: new Map(),
       slotOwners: {},
       grace: new Map(),
+      currentGame: 'penalty', // 'penalty' | 'uno'
+      unoGame: null,          // active UnoGame instance, if any
     });
     return code;
   }
