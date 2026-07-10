@@ -337,5 +337,27 @@ bindUno(unoDraw, 'draw', () => unoDraw.disabled);
 bindUno(unoPass, 'pass');
 bindUno(unoUno, 'uno');
 
+// ---- Among Us ----
+const amongusRole = $('amongusRole');
+
+socket.on('amongus_role', (r) => {
+  const imp = r && r.role === 'imposter';
+  amongusRole.querySelector('.ar-title').textContent = imp ? 'IMPOSTER' : 'CREWMATE';
+  amongusRole.querySelector('.ar-sub').textContent = imp
+    ? 'Blend in. Don’t get caught. Move with the joystick.'
+    : 'Find the imposter. Move with the joystick.';
+  amongusRole.style.background = imp ? '#3a0d0d' : '#0d2a17';
+  amongusRole.querySelector('.ar-title').style.color = imp ? '#ff6b6b' : '#4ade80';
+
+  // Make sure the joystick controller is what's under the banner.
+  joinEl.style.display = 'none';
+  unoEl.style.display = 'none';
+  controllerEl.style.display = 'flex';
+  amongusRole.classList.add('show');
+  setTimeout(() => amongusRole.classList.remove('show'), 3500);
+});
+
+socket.on('amongus_over', () => { amongusRole.classList.remove('show'); });
+
 // ---- boot ----
 initJoinScreen();

@@ -158,6 +158,16 @@
     .cp[data-color="green"] { background: #22c55e; }
     .cp[data-color="blue"] { background: #3b82f6; }
     #cpCancel { margin-top: 18px; width: 220px; flex: none; }
+
+    /* ---- Among Us role reveal ---- */
+    #amongusRole {
+      position: absolute; inset: 0; z-index: 25; display: none;
+      flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+      text-align: center; padding: 24px;
+    }
+    #amongusRole.show { display: flex; }
+    #amongusRole .ar-title { font-size: 60px; font-weight: 900; letter-spacing: 3px; }
+    #amongusRole .ar-sub { font-size: 20px; color: #cbd3e6; max-width: 320px; }
   </style>
 </head>
 <body>
@@ -229,6 +239,12 @@
       <button id="cpCancel" class="ubtn">Cancel</button>
     </div>
   </section>
+
+  <!-- Among Us role reveal (shown briefly at the start of a round) -->
+  <div id="amongusRole">
+    <div class="ar-title"></div>
+    <div class="ar-sub"></div>
+  </div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="src/controller.js"></script>

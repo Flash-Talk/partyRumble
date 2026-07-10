@@ -62,10 +62,21 @@ class Net {
     this.unoState = null;
     this.socket.on('uno_state', (state) => { this.unoState = state; this.events.emit('uno_state', state); });
     this.socket.on('uno_over', (data) => { this.unoState = null; this.events.emit('uno_over', data); });
+
+    // Among Us (server-authoritative): TV renders the map + anonymous characters.
+    this.amongusMap = null;
+    this.amongusState = null;
+    this.socket.on('amongus_start', ({ map }) => { this.amongusMap = map; this.events.emit('amongus_start', map); });
+    this.socket.on('amongus_state', (state) => { this.amongusState = state; this.events.emit('amongus_state', state); });
+    this.socket.on('amongus_over', (data) => { this.amongusState = null; this.events.emit('amongus_over', data); });
   }
 
   startUno() {
     if (this.socket) this.socket.emit('start_uno');
+  }
+
+  startAmongUs() {
+    if (this.socket) this.socket.emit('start_amongus');
   }
 
   getInput(slot) {

@@ -1,6 +1,7 @@
 'use strict';
 
 const uno = require('./unoService');
+const amongus = require('./amongusService');
 
 /**
  * Wire socket.io events to the RoomManager. The server relays controller input
@@ -75,8 +76,9 @@ function registerHandlers(io, rooms) {
         color: player.color,
       });
 
-      // Rejoined mid-UNO round? Push this player's hand so their UI resumes.
+      // Rejoined mid-round? Re-send the private game state their UI needs.
       if (room.unoGame) uno.resendHand(io, room, player.slot);
+      if (room.amongus) amongus.resendRole(io, room, player.slot);
     });
 
     // --- UNO: TV starts a round; players act -------------------------------
@@ -92,11 +94,24 @@ function registerHandlers(io, rooms) {
       if (room) uno.handleUnoAction(io, room, socket.data.slot, payload || {});
     });
 
-    // --- Controller input -> relayed to the TV as game_input --------------
+    // --- Among Us: TV starts a round --------------------------------------
+    socket.on('start_amongus', () => {
+      if (socket.data.role !== 'tv') return;
+      const room = rooms.getRoom(socket.data.roomCode);
+      if (room) amongus.start(io, room);
+    });
+
+    // --- Controller input --------------------------------------------------
+    // Penalty Rumble: relayed to the TV (it simulates). Among Us: consumed by
+    // the server (it simulates), so it is NOT relayed.
     socket.on('controller_input', (payload = {}) => {
       if (socket.data.role !== 'player') return;
       const room = rooms.getRoom(socket.data.roomCode);
       if (!room) return;
+      if (room.currentGame === 'amongus' && room.amongus) {
+        amongus.handleInput(room, socket.data.slot, payload);
+        return;
+      }
       emitToTv(room, 'game_input', {
         slot: socket.data.slot,
         type: payload.type,

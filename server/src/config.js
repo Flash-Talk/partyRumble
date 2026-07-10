@@ -2,6 +2,7 @@
 module.exports = {
   MAX_PLAYERS: 8,
   MIN_PLAYERS_UNO: 2,
+  MIN_PLAYERS_AMONGUS: 4,
 
   // Hold a disconnected player's slot this long before freeing it (spec: 30s).
   DISCONNECT_GRACE_MS: 30_000,

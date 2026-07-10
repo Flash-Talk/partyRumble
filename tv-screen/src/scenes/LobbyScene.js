@@ -16,7 +16,11 @@ export default class LobbyScene extends Phaser.Scene {
     this.keyLeft = this.input.keyboard.addKey('LEFT');
     this.keyRight = this.input.keyboard.addKey('RIGHT');
 
-    this.games = [{ key: 'penalty', name: 'Penalty Rumble' }, { key: 'uno', name: 'UNO' }];
+    this.games = [
+      { key: 'penalty', name: 'Penalty Rumble', min: 2 },
+      { key: 'uno', name: 'UNO', min: 2 },
+      { key: 'amongus', name: 'Among Us', min: 4 },
+    ];
     this.gameIndex = 0;
     this.tiltLatch = false;
 
@@ -95,12 +99,17 @@ export default class LobbyScene extends Phaser.Scene {
       else { t.setText('open'); t.setColor('#3a466f'); }
     });
 
+    this.updateStartHint();
+  }
+
+  updateStartHint() {
     if (this.counting) return;
-    const count = Net.players.size;
-    this.startHint.setText(count >= CONFIG.MIN_PLAYERS
+    const game = this.games[this.gameIndex];
+    const ok = Net.players.size >= game.min;
+    this.startHint.setText(ok
       ? 'Press SHOOT on any phone to START'
-      : `Waiting for players… (need at least ${CONFIG.MIN_PLAYERS})`);
-    this.startHint.setColor(count >= CONFIG.MIN_PLAYERS ? '#4ade80' : '#8b93a7');
+      : `Waiting for players… (${game.name} needs ${game.min})`);
+    this.startHint.setColor(ok ? '#4ade80' : '#8b93a7');
   }
 
   update() {
@@ -120,7 +129,7 @@ export default class LobbyScene extends Phaser.Scene {
       else if (Math.abs(tilt) < 0.3) this.tiltLatch = false;
     }
 
-    if (!this.counting && anyShoot && !this.prevAnyShoot && Net.players.size >= CONFIG.MIN_PLAYERS) {
+    if (!this.counting && anyShoot && !this.prevAnyShoot && Net.players.size >= this.games[this.gameIndex].min) {
       this.startCountdown();
     }
     this.prevAnyShoot = anyShoot;
@@ -129,6 +138,7 @@ export default class LobbyScene extends Phaser.Scene {
   cycleGame(d) {
     this.gameIndex = (this.gameIndex + d + this.games.length) % this.games.length;
     this.updateGameLabel();
+    this.updateStartHint();
   }
 
   updateGameLabel() {
@@ -138,6 +148,7 @@ export default class LobbyScene extends Phaser.Scene {
   startSelectedGame() {
     const g = this.games[this.gameIndex];
     if (g.key === 'uno') { Net.startUno(); this.scene.start('UnoScene'); }
+    else if (g.key === 'amongus') { Net.startAmongUs(); this.scene.start('AmongUsScene'); }
     else this.scene.start('GameScene');
   }
 
@@ -145,7 +156,7 @@ export default class LobbyScene extends Phaser.Scene {
     this.counting = true;
     let n = 3;
     const tick = () => {
-      if (Net.players.size < CONFIG.MIN_PLAYERS) { this.counting = false; this.refreshRoster(); return; }
+      if (Net.players.size < this.games[this.gameIndex].min) { this.counting = false; this.refreshRoster(); return; }
       if (n <= 0) { this.startSelectedGame(); return; }
       this.startHint.setText(`Starting ${this.games[this.gameIndex].name} in ${n}…`).setColor('#eef1f7');
       n -= 1;

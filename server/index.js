@@ -9,6 +9,7 @@ const config = require('./src/config');
 const RoomManager = require('./src/RoomManager');
 const registerHandlers = require('./src/handlers');
 const uno = require('./src/unoService');
+const amongus = require('./src/amongusService');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -39,6 +40,7 @@ function createServer(overrides = {}) {
       if (!room) return;
       io.to(room.tvSocketId).emit('player_left', payload);
       if (room.unoGame) uno.handlePlayerLeftUno(io, room, payload.slot);
+      if (room.amongus) amongus.handlePlayerLeft(io, room, payload.slot);
     },
     onRoomClosed: (roomCode) => {
       // Host never came back — tell any remaining phones.

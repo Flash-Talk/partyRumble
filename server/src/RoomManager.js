@@ -36,8 +36,10 @@ class RoomManager {
       players: new Map(),
       slotOwners: {},
       grace: new Map(),
-      currentGame: 'penalty', // 'penalty' | 'uno'
+      currentGame: 'penalty', // 'penalty' | 'uno' | 'amongus'
       unoGame: null,          // active UnoGame instance, if any
+      amongus: null,          // active AmongUsGame instance, if any
+      amongusLoop: null,      // its tick interval
     });
     return code;
   }
@@ -73,11 +75,12 @@ class RoomManager {
     if (typeof room.tvGraceTimer.unref === 'function') room.tvGraceTimer.unref();
   }
 
-  /** Tear a room down. Clears any pending grace timers. */
+  /** Tear a room down. Clears any pending grace timers and game loops. */
   closeRoom(code) {
     const room = this.rooms.get(code);
     if (!room) return;
     if (room.tvGraceTimer) clearTimeout(room.tvGraceTimer);
+    if (room.amongusLoop) clearInterval(room.amongusLoop);
     for (const { timer } of room.grace.values()) clearTimeout(timer);
     this.rooms.delete(code);
   }
