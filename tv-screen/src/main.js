@@ -16,10 +16,6 @@ const game = new Phaser.Game({
     width: DESIGN.W,
     height: DESIGN.H,
   },
-  physics: {
-    default: 'arcade',
-    arcade: { debug: false },
-  },
   scene: [BootScene, LobbyScene, GameScene, ResultScene],
 });
 

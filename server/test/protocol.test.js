@@ -113,25 +113,22 @@ test('controller_input is relayed to the TV as game_input with the slot', async 
   assert.deepEqual(msg, { slot: 'player_1', type: 'AXIS', id: 'x', value: 0.5 });
 });
 
-test('slots are handed out in order and a 5th player is rejected as full', async (t) => {
+test('slots are handed out in order up to 8 and a 9th player is rejected as full', async (t) => {
   const ctx = await startServer();
   t.after(() => stopServer(ctx));
   const { tv, roomCode } = await makeTvWithRoom(ctx.port);
   t.after(() => tv.close());
 
-  const players = [];
-  const expected = ['player_1', 'player_2', 'player_3', 'player_4'];
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 8; i++) {
     const p = await joinPlayer(ctx.port, roomCode, `P${i + 1}`);
-    players.push(p);
     t.after(() => p.close());
     const ok = await once(p, 'join_success');
-    assert.equal(ok.slot, expected[i]);
+    assert.equal(ok.slot, `player_${i + 1}`);
   }
 
-  const fifth = await joinPlayer(ctx.port, roomCode, 'Late');
-  t.after(() => fifth.close());
-  const err = await once(fifth, 'room_error');
+  const ninth = await joinPlayer(ctx.port, roomCode, 'Late');
+  t.after(() => ninth.close());
+  const err = await once(ninth, 'room_error');
   assert.equal(err.message, 'Room is full');
 });
 

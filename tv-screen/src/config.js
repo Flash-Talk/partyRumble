@@ -4,12 +4,14 @@
 export const DESIGN = { W: 1920, H: 1080 };
 
 export const CONFIG = {
-  FIELD_SIZE: 980,        // square play field, centered
-  WEDGE_MARGIN: 40,       // inset of each player's triangle (keeps discs off walls/apex)
-  DISC_RADIUS: 34,
+  ARENA_RADIUS: 470,      // circumradius of the polygon arena (fits 1080 height)
+  WEDGE_MARGIN: 40,       // inset of each player's zone (keeps discs off walls/apex)
+  GOAL_FRACTION: 0.52,    // goal opening as a fraction of each polygon edge
+  DISC_RADIUS: 32,
   BALL_RADIUS: 16,
 
   MOVE_SPEED: 520,        // px/s at full joystick tilt
+  DISC_KICK: 0.45,        // how much a moving disc's velocity transfers to the ball
   SHOOT_SPEED: 900,       // px/s launch speed on SHOOT
   RELEASE_SPEED: 520,     // px/s when the hold timer forces a release
   BALL_MAX_SPEED: 950,
@@ -21,24 +23,29 @@ export const CONFIG = {
   TRAP_COOLDOWN_MS: 400,  // after shooting, you can't instantly re-trap
   IDLE_NUDGE_MS: 2500,    // a near-stationary loose ball gets nudged back into play
 
-  GOAL_HALF: 120,         // half-width of each goal opening
-  WALL_THICKNESS: 24,
-
   MATCH_SECONDS: 90,
   RESET_DELAY_MS: 1200,   // pause after a goal before the ball drops again
   HOLD_OFFSET: 8,         // gap between disc and held ball, beyond the two radii
 
   MIN_PLAYERS: 2,
+  MAX_PLAYERS: 8,
 };
 
-export const SLOT_ORDER = ['player_1', 'player_2', 'player_3', 'player_4'];
+export const SLOT_ORDER = [
+  'player_1', 'player_2', 'player_3', 'player_4',
+  'player_5', 'player_6', 'player_7', 'player_8',
+];
 
-// side + default color (matches the server) + short label.
+// Color (matches the server) + short label per slot.
 export const SLOT_META = {
-  player_1: { side: 'top',    color: '#ef4444', label: 'P1' },
-  player_2: { side: 'right',  color: '#3b82f6', label: 'P2' },
-  player_3: { side: 'bottom', color: '#22c55e', label: 'P3' },
-  player_4: { side: 'left',   color: '#eab308', label: 'P4' },
+  player_1: { color: '#ef4444', label: 'P1' },
+  player_2: { color: '#3b82f6', label: 'P2' },
+  player_3: { color: '#22c55e', label: 'P3' },
+  player_4: { color: '#eab308', label: 'P4' },
+  player_5: { color: '#a855f7', label: 'P5' },
+  player_6: { color: '#f97316', label: 'P6' },
+  player_7: { color: '#ec4899', label: 'P7' },
+  player_8: { color: '#14b8a6', label: 'P8' },
 };
 
 export function hexToNum(hex) {

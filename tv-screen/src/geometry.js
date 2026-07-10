@@ -1,125 +1,168 @@
-// Arena geometry: field bounds, per-player triangular zones, goal openings,
-// wall segments (with gaps at active goals), and the clamp used to keep a
-// player inside their own wedge.
+// Parametric arena. Given the ordered list of active player slots (2-8), builds
+// a regular polygon where each player owns one edge (their goal) and an equal
+// triangular zone from that edge to the center. 2 players get a face-off
+// rectangle instead. The ball's wall bounces are resolved here (manual, because
+// Arcade physics bodies are axis-aligned and can't represent angled walls).
 
 import { CONFIG, DESIGN } from './config.js';
 
-const S = CONFIG.FIELD_SIZE;
-const x0 = (DESIGN.W - S) / 2;
-const y0 = (DESIGN.H - S) / 2;
-const x1 = x0 + S;
-const y1 = y0 + S;
-const cx = x0 + S / 2;
-const cy = y0 + S / 2;
-const GH = CONFIG.GOAL_HALF;
-const M = CONFIG.WEDGE_MARGIN;
+const C = { x: DESIGN.W / 2, y: DESIGN.H / 2 };
 
-export const FIELD = { x0, y0, x1, y1, cx, cy, size: S };
-
-// Goal opening endpoints (a segment on the owning wall).
-export const GOALS = {
-  player_1: { side: 'top',    ax: cx - GH, ay: y0, bx: cx + GH, by: y0 },
-  player_2: { side: 'right',  ax: x1, ay: cy - GH, bx: x1, by: cy + GH },
-  player_3: { side: 'bottom', ax: cx - GH, ay: y1, bx: cx + GH, by: y1 },
-  player_4: { side: 'left',   ax: x0, ay: cy - GH, bx: x0, by: cy + GH },
-};
-
-// Each player's triangular zone (inset by M).
-export const WEDGES = {
-  player_1: [{ x: x0 + M, y: y0 + M }, { x: x1 - M, y: y0 + M }, { x: cx, y: cy - M }],
-  player_2: [{ x: x1 - M, y: y0 + M }, { x: x1 - M, y: y1 - M }, { x: cx + M, y: cy }],
-  player_3: [{ x: x1 - M, y: y1 - M }, { x: x0 + M, y: y1 - M }, { x: cx, y: cy + M }],
-  player_4: [{ x: x0 + M, y: y1 - M }, { x: x0 + M, y: y0 + M }, { x: cx - M, y: cy }],
-};
-
-// Where each player's disc spawns (near their own goal).
-export const SPAWN = {
-  player_1: { x: cx, y: y0 + 130 },
-  player_2: { x: x1 - 130, y: cy },
-  player_3: { x: cx, y: y1 - 130 },
-  player_4: { x: x0 + 130, y: cy },
-};
-
-export function goalCenter(slot) {
-  const g = GOALS[slot];
-  return { x: (g.ax + g.bx) / 2, y: (g.ay + g.by) / 2 };
+export function buildArena(slots) {
+  return new Arena(slots);
 }
 
-export function clampToWedge(slot, p) {
-  const w = WEDGES[slot];
-  return closestPointOnTriangle(p, w[0], w[1], w[2]);
+class Arena {
+  constructor(slots) {
+    this.slots = slots.slice();
+    this.N = this.slots.length;
+    this.center = { x: C.x, y: C.y };
+    this.verts = [];
+    this.edges = [];      // { A, B, ex, ey, len, normal(inward), owner|null, t0, t1 }
+    this.zones = {};      // slot -> inset convex polygon [pts]
+    this.spawns = {};     // slot -> spawn point
+    this.goalMids = {};   // slot -> goal center on the wall
+
+    if (this.N === 2) this._buildDuel();
+    else this._buildPolygon();
+  }
+
+  _buildPolygon() {
+    const R = CONFIG.ARENA_RADIUS;
+    const N = this.N;
+    const step = (Math.PI * 2) / N;
+    const a0 = Math.PI / 2 - Math.PI / N; // orient so edge 0 sits at the bottom
+    for (let k = 0; k < N; k++) {
+      this.verts.push({ x: C.x + R * Math.cos(a0 + k * step), y: C.y + R * Math.sin(a0 + k * step) });
+    }
+    const gf = CONFIG.GOAL_FRACTION;
+    for (let i = 0; i < N; i++) {
+      const A = this.verts[i];
+      const B = this.verts[(i + 1) % N];
+      const owner = this.slots[i];
+      this._addEdge(A, B, owner, (1 - gf) / 2, (1 + gf) / 2);
+      this.zones[owner] = insetPolygon([this.center, A, B], CONFIG.WEDGE_MARGIN);
+      const mid = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 };
+      this.goalMids[owner] = mid;
+      this.spawns[owner] = lerp(mid, this.center, 0.3);
+    }
+  }
+
+  _buildDuel() {
+    const S = CONFIG.ARENA_RADIUS * 1.7;
+    const hw = S / 2;
+    const x0 = C.x - hw, x1 = C.x + hw, y0 = C.y - hw, y1 = C.y + hw;
+    this.verts = [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
+    const gf = CONFIG.GOAL_FRACTION;
+    const g0 = (1 - gf) / 2, g1 = (1 + gf) / 2;
+    const [p0, p1] = this.slots;
+
+    this._addEdge({ x: x0, y: y0 }, { x: x1, y: y0 }, null);           // top wall
+    this._addEdge({ x: x1, y: y0 }, { x: x1, y: y1 }, p1, g0, g1);     // right goal
+    this._addEdge({ x: x1, y: y1 }, { x: x0, y: y1 }, null);           // bottom wall
+    this._addEdge({ x: x0, y: y1 }, { x: x0, y: y0 }, p0, g0, g1);     // left goal
+
+    this.zones[p0] = insetPolygon(
+      [{ x: x0, y: y0 }, { x: C.x, y: y0 }, { x: C.x, y: y1 }, { x: x0, y: y1 }], CONFIG.WEDGE_MARGIN);
+    this.zones[p1] = insetPolygon(
+      [{ x: C.x, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: C.x, y: y1 }], CONFIG.WEDGE_MARGIN);
+    this.goalMids[p0] = { x: x0, y: C.y };
+    this.goalMids[p1] = { x: x1, y: C.y };
+    this.spawns[p0] = { x: x0 + 130, y: C.y };
+    this.spawns[p1] = { x: x1 - 130, y: C.y };
+  }
+
+  _addEdge(A, B, owner, t0 = 0, t1 = 0) {
+    const ex = B.x - A.x, ey = B.y - A.y;
+    const len = Math.hypot(ex, ey);
+    let nx = -ey / len, ny = ex / len;
+    const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2;
+    if ((C.x - mx) * nx + (C.y - my) * ny < 0) { nx = -nx; ny = -ny; } // point inward
+    this.edges.push({ A, B, ex, ey, len, normal: { x: nx, y: ny }, owner, t0, t1 });
+  }
+
+  clamp(slot, p) {
+    return closestPointInConvexPolygon(p, this.zones[slot]);
+  }
+
+  goalCenter(slot) {
+    return this.goalMids[slot];
+  }
+
+  // Goal opening endpoints for an owner edge (for drawing).
+  goalSegment(edge) {
+    return [lerp(edge.A, edge.B, edge.t0), lerp(edge.A, edge.B, edge.t1)];
+  }
+
+  /**
+   * Resolve wall bounces, mutating {pos, vel} in place. Convex containment:
+   * each edge is an inward half-plane; if the ball pokes past one (and isn't in
+   * that edge's goal mouth) it's pushed back and its velocity reflected.
+   * @returns the slot whose goal was scored on, or null.
+   */
+  collideWall(pos, vel, r) {
+    let goalOwner = null;
+    for (const e of this.edges) {
+      const d = (pos.x - e.A.x) * e.normal.x + (pos.y - e.A.y) * e.normal.y; // + inside
+      if (d >= r) continue;
+      const t = ((pos.x - e.A.x) * e.ex + (pos.y - e.A.y) * e.ey) / (e.len * e.len);
+      if (e.owner && t > e.t0 && t < e.t1) {
+        if (d < 0) goalOwner = e.owner; // passed through the opening
+        continue;                       // never bounce inside the goal mouth
+      }
+      const pen = r - d;
+      pos.x += e.normal.x * pen;
+      pos.y += e.normal.y * pen;
+      const vn = vel.x * e.normal.x + vel.y * e.normal.y;
+      if (vn < 0) { vel.x -= 2 * vn * e.normal.x; vel.y -= 2 * vn * e.normal.y; }
+    }
+    return goalOwner;
+  }
 }
 
-// Returns the slot whose goal the ball has crossed into, or null.
-// Only active goals count; solid (unclaimed) walls never score.
-export function goalOwnerAt(bx, by, activeSlots) {
-  if (activeSlots.includes('player_1') && by <= y0 && bx >= cx - GH && bx <= cx + GH) return 'player_1';
-  if (activeSlots.includes('player_2') && bx >= x1 && by >= cy - GH && by <= cy + GH) return 'player_2';
-  if (activeSlots.includes('player_3') && by >= y1 && bx >= cx - GH && bx <= cx + GH) return 'player_3';
-  if (activeSlots.includes('player_4') && bx <= x0 && by >= cy - GH && by <= cy + GH) return 'player_4';
-  return null;
+// ---- geometry helpers ------------------------------------------------------
+
+function lerp(a, b, t) {
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
 }
 
-// True once the ball is clearly outside the field (failsafe reset trigger).
-export function isBallLost(bx, by, pad = 90) {
-  return bx < x0 - pad || bx > x1 + pad || by < y0 - pad || by > y1 + pad;
+function insetPolygon(poly, m) {
+  const cx = poly.reduce((s, p) => s + p.x, 0) / poly.length;
+  const cy = poly.reduce((s, p) => s + p.y, 0) / poly.length;
+  return poly.map((p) => {
+    const dx = cx - p.x, dy = cy - p.y;
+    const d = Math.hypot(dx, dy) || 1;
+    return { x: p.x + (dx / d) * m, y: p.y + (dy / d) * m };
+  });
 }
 
-// Wall rectangles {cx,cy,w,h}. Active walls leave a gap at the goal; unclaimed
-// walls are solid so the ball can't score there.
-export function buildWalls(activeSlots) {
-  const T = CONFIG.WALL_THICKNESS;
-  const rects = [];
-  const has = (s) => activeSlots.includes(s);
-  const hSeg = (xa, xb, y) => rects.push({ cx: (xa + xb) / 2, cy: y, w: xb - xa + T, h: T });
-  const vSeg = (ya, yb, x) => rects.push({ cx: x, cy: (ya + yb) / 2, w: T, h: yb - ya + T });
-
-  if (has('player_1')) { hSeg(x0, cx - GH, y0); hSeg(cx + GH, x1, y0); } else hSeg(x0, x1, y0);
-  if (has('player_3')) { hSeg(x0, cx - GH, y1); hSeg(cx + GH, x1, y1); } else hSeg(x0, x1, y1);
-  if (has('player_4')) { vSeg(y0, cy - GH, x0); vSeg(cy + GH, y1, x0); } else vSeg(y0, y1, x0);
-  if (has('player_2')) { vSeg(y0, cy - GH, x1); vSeg(cy + GH, y1, x1); } else vSeg(y0, y1, x1);
-  return rects;
-}
-
-// ---- closest point on a triangle (Ericson, Real-Time Collision Detection) ----
-// Returns p unchanged if inside; otherwise the nearest point on the triangle.
-function closestPointOnTriangle(p, a, b, c) {
+function closestPointOnSegment(p, a, b) {
   const abx = b.x - a.x, aby = b.y - a.y;
-  const acx = c.x - a.x, acy = c.y - a.y;
-  const apx = p.x - a.x, apy = p.y - a.y;
-  const d1 = abx * apx + aby * apy;
-  const d2 = acx * apx + acy * apy;
-  if (d1 <= 0 && d2 <= 0) return { x: a.x, y: a.y };
+  const len2 = abx * abx + aby * aby || 1;
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * abx + (p.y - a.y) * aby) / len2));
+  return { x: a.x + abx * t, y: a.y + aby * t };
+}
 
-  const bpx = p.x - b.x, bpy = p.y - b.y;
-  const d3 = abx * bpx + aby * bpy;
-  const d4 = acx * bpx + acy * bpy;
-  if (d3 >= 0 && d4 <= d3) return { x: b.x, y: b.y };
-
-  const vc = d1 * d4 - d3 * d2;
-  if (vc <= 0 && d1 >= 0 && d3 <= 0) {
-    const v = d1 / (d1 - d3);
-    return { x: a.x + abx * v, y: a.y + aby * v };
+function pointInConvexPolygon(p, poly) {
+  let sign = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+    if (cross === 0) continue;
+    const s = cross > 0 ? 1 : -1;
+    if (sign === 0) sign = s;
+    else if (s !== sign) return false;
   }
+  return true;
+}
 
-  const cpx = p.x - c.x, cpy = p.y - c.y;
-  const d5 = abx * cpx + aby * cpy;
-  const d6 = acx * cpx + acy * cpy;
-  if (d6 >= 0 && d5 <= d6) return { x: c.x, y: c.y };
-
-  const vb = d5 * d2 - d1 * d6;
-  if (vb <= 0 && d2 >= 0 && d6 <= 0) {
-    const w = d2 / (d2 - d6);
-    return { x: a.x + acx * w, y: a.y + acy * w };
+function closestPointInConvexPolygon(p, poly) {
+  if (pointInConvexPolygon(p, poly)) return { x: p.x, y: p.y };
+  let best = null, bd = Infinity;
+  for (let i = 0; i < poly.length; i++) {
+    const q = closestPointOnSegment(p, poly[i], poly[(i + 1) % poly.length]);
+    const d = (p.x - q.x) ** 2 + (p.y - q.y) ** 2;
+    if (d < bd) { bd = d; best = q; }
   }
-
-  const va = d3 * d6 - d5 * d4;
-  if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) {
-    const w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
-    return { x: b.x + (c.x - b.x) * w, y: b.y + (c.y - b.y) * w };
-  }
-
-  const denom = 1 / (va + vb + vc);
-  const v = vb * denom, w = vc * denom;
-  return { x: a.x + abx * v + acx * w, y: a.y + aby * v + acy * w };
+  return best || { x: p.x, y: p.y };
 }

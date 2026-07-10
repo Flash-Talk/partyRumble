@@ -1,6 +1,6 @@
 // Server configuration. Room/player lifecycle only — no gameplay state lives here.
 module.exports = {
-  MAX_PLAYERS: 4,
+  MAX_PLAYERS: 8,
 
   // Hold a disconnected player's slot this long before freeing it (spec: 30s).
   DISCONNECT_GRACE_MS: 30_000,
@@ -10,12 +10,16 @@ module.exports = {
   // party being lost. Matters most for internet play.
   TV_GRACE_MS: 60_000,
 
-  // Fixed color per slot. Distinct + high-contrast on a TV.
+  // Fixed color per slot. 8 distinct, high-contrast hues for a TV.
   SLOT_COLORS: {
-    player_1: '#ef4444', // red    (top)
-    player_2: '#3b82f6', // blue   (right)
-    player_3: '#22c55e', // green  (bottom)
-    player_4: '#eab308', // yellow (left)
+    player_1: '#ef4444', // red
+    player_2: '#3b82f6', // blue
+    player_3: '#22c55e', // green
+    player_4: '#eab308', // yellow
+    player_5: '#a855f7', // purple
+    player_6: '#f97316', // orange
+    player_7: '#ec4899', // pink
+    player_8: '#14b8a6', // teal
   },
 
   ROOM_CODE_LENGTH: 4,

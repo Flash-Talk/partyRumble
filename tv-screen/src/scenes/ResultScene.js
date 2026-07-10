@@ -1,6 +1,6 @@
 // Final standings + rematch. SHOOT (any player) starts another match.
 import Net from '../net.js';
-import { DESIGN, CONFIG, SLOT_META, hexToNum } from '../config.js';
+import { DESIGN, CONFIG, hexToNum } from '../config.js';
 
 export default class ResultScene extends Phaser.Scene {
   constructor() {
@@ -30,17 +30,18 @@ export default class ResultScene extends Phaser.Scene {
       }).setOrigin(0.5);
     }
 
-    // Standings table.
-    const startY = 420;
+    // Standings table (fits up to 8 rows).
+    const rowH = Math.min(88, Math.floor(560 / Math.max(1, this.standings.length)));
+    const fs = this.standings.length > 5 ? 36 : 44;
+    const startY = 400;
     this.standings.forEach((row, i) => {
-      const y = startY + i * 90;
-      const meta = SLOT_META[row.slot];
-      this.add.rectangle(DESIGN.W / 2 - 430, y, 40, 40, hexToNum(row.color));
-      this.add.text(DESIGN.W / 2 - 390, y, `${i + 1}.  ${row.name}  (${meta.side})`, {
-        fontFamily: 'system-ui, sans-serif', fontSize: '44px', color: '#eef1f7',
+      const y = startY + i * rowH;
+      this.add.rectangle(DESIGN.W / 2 - 430, y, 36, 36, hexToNum(row.color));
+      this.add.text(DESIGN.W / 2 - 390, y, `${i + 1}.  ${row.name}`, {
+        fontFamily: 'system-ui, sans-serif', fontSize: `${fs}px`, color: '#eef1f7',
       }).setOrigin(0, 0.5);
       this.add.text(DESIGN.W / 2 + 430, y, `${signed(row.diff)}    scored ${row.scored} · let in ${row.conceded}`, {
-        fontFamily: 'system-ui, sans-serif', fontSize: '36px', color: '#8b93a7',
+        fontFamily: 'system-ui, sans-serif', fontSize: `${fs - 6}px`, color: '#8b93a7',
       }).setOrigin(1, 0.5);
     });
 

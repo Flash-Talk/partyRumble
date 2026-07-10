@@ -1,12 +1,9 @@
-// The match. Runs the whole simulation locally on the TV, driven by the
-// per-slot input snapshot in Net. Server only relays input.
+// The match. Runs the whole simulation locally on the TV with a manual physics
+// loop (so the polygon arena's angled walls bounce correctly). Server only
+// relays input. Supports 2-8 players on an arena that fits the player count.
 import Net from '../net.js';
-import {
-  DESIGN, CONFIG, SLOT_META, hexToNum,
-} from '../config.js';
-import {
-  FIELD, GOALS, WEDGES, SPAWN, goalCenter, clampToWedge, goalOwnerAt, isBallLost, buildWalls,
-} from '../geometry.js';
+import { DESIGN, CONFIG, SLOT_META, hexToNum } from '../config.js';
+import { buildArena } from '../geometry.js';
 
 const { DISC_RADIUS: DR, BALL_RADIUS: BR } = CONFIG;
 
@@ -18,7 +15,6 @@ export default class GameScene extends Phaser.Scene {
   create() {
     this.cameras.main.setBackgroundColor('#0a0e1a');
 
-    // Snapshot the roster for this match.
     this.slots = Net.activeSlots();
     this.meta = {};
     for (const slot of this.slots) {
@@ -28,7 +24,10 @@ export default class GameScene extends Phaser.Scene {
         color: p ? p.color : SLOT_META[slot].color,
       };
     }
+    this.arena = buildArena(this.slots);
 
+    this.bvel = { x: 0, y: 0 };
+    this.lastTouch = null;
     this.heldBy = null;
     this.holdStart = 0;
     this.ballFrozen = true;
@@ -42,17 +41,14 @@ export default class GameScene extends Phaser.Scene {
     this.makeCircleTexture('ballTex', BR);
 
     this.drawField();
-    this.createWalls();
     this.createDiscs();
     this.createBall();
     this.createHud();
 
-    // Keyboard fallback: arrows + SPACE drive the first player (solo testing).
     this.cursors = this.input.keyboard.createCursorKeys();
     this.keyShoot = this.input.keyboard.addKey('SPACE');
     this.debugSlot = this.slots[0];
 
-    // Mid-match leaver: drop their disc; if they held the ball, free it.
     this.onPlayerLeft = (slot) => this.removeSlot(slot);
     Net.events.on('player_left', this.onPlayerLeft);
     this.events.once('shutdown', () => Net.events.off('player_left', this.onPlayerLeft));
@@ -60,7 +56,7 @@ export default class GameScene extends Phaser.Scene {
     this.dropBall();
   }
 
-  // ---- setup helpers -------------------------------------------------------
+  // ---- setup ---------------------------------------------------------------
 
   makeCircleTexture(key, r) {
     if (this.textures.exists(key)) return;
@@ -73,111 +69,91 @@ export default class GameScene extends Phaser.Scene {
 
   drawField() {
     const g = this.add.graphics();
-    // Field backdrop.
-    g.fillStyle(0x111731, 1);
-    g.fillRect(FIELD.x0, FIELD.y0, FIELD.size, FIELD.size);
+    const v = this.arena.verts;
 
-    // Faint per-zone tint in each active player's color.
+    // Arena floor.
+    g.fillStyle(0x111731, 1);
+    g.beginPath();
+    g.moveTo(v[0].x, v[0].y);
+    for (let i = 1; i < v.length; i++) g.lineTo(v[i].x, v[i].y);
+    g.closePath();
+    g.fillPath();
+
+    // Zone tints per player.
     for (const slot of this.slots) {
-      const w = WEDGES[slot];
-      g.fillStyle(hexToNum(this.meta[slot].color), 0.07);
+      const poly = this.arena.zones[slot];
+      g.fillStyle(hexToNum(this.meta[slot].color), 0.08);
       g.beginPath();
-      g.moveTo(w[0].x, w[0].y);
-      g.lineTo(w[1].x, w[1].y);
-      g.lineTo(w[2].x, w[2].y);
+      g.moveTo(poly[0].x, poly[0].y);
+      for (let i = 1; i < poly.length; i++) g.lineTo(poly[i].x, poly[i].y);
       g.closePath();
       g.fillPath();
     }
 
-    // Diagonals + center marker.
-    g.lineStyle(2, 0x263056, 0.8);
-    g.lineBetween(FIELD.x0, FIELD.y0, FIELD.x1, FIELD.y1);
-    g.lineBetween(FIELD.x1, FIELD.y0, FIELD.x0, FIELD.y1);
+    // Walls (neutral) + goal openings (owner color).
+    for (const e of this.arena.edges) {
+      if (e.owner) {
+        const [ga, gb] = this.arena.goalSegment(e);
+        g.lineStyle(6, 0x39406b, 1);
+        g.lineBetween(e.A.x, e.A.y, ga.x, ga.y);
+        g.lineBetween(gb.x, gb.y, e.B.x, e.B.y);
+        g.lineStyle(12, hexToNum(this.meta[e.owner].color), 1);
+        g.lineBetween(ga.x, ga.y, gb.x, gb.y);
+      } else {
+        g.lineStyle(6, 0x39406b, 1);
+        g.lineBetween(e.A.x, e.A.y, e.B.x, e.B.y);
+      }
+    }
+
     g.lineStyle(3, 0x2a3350, 1);
-    g.strokeCircle(FIELD.cx, FIELD.cy, 60);
-
-    // Colored goal openings for active players.
-    for (const slot of this.slots) {
-      const go = GOALS[slot];
-      g.lineStyle(10, hexToNum(this.meta[slot].color), 1);
-      g.lineBetween(go.ax, go.ay, go.bx, go.by);
-    }
-  }
-
-  createWalls() {
-    this.wallObjs = [];
-    for (const r of buildWalls(this.slots)) {
-      const w = this.add.rectangle(r.cx, r.cy, r.w, r.h, 0x39406b);
-      this.physics.add.existing(w, true); // static body
-      this.wallObjs.push(w);
-    }
+    g.strokeCircle(this.arena.center.x, this.arena.center.y, 46);
   }
 
   createDiscs() {
-    this.discGroup = this.physics.add.group();
     this.state = {};
     for (const slot of this.slots) {
-      const sp = SPAWN[slot];
-      const disc = this.discGroup.create(sp.x, sp.y, 'discTex');
-      disc.setTint(hexToNum(this.meta[slot].color));
-      disc.body.setCircle(DR);
-      disc.body.pushable = false;
-      disc.slot = slot;
-
-      // A small label so players find their disc.
+      const sp = this.arena.spawns[slot];
+      const disc = this.add.image(sp.x, sp.y, 'discTex').setTint(hexToNum(this.meta[slot].color));
       const label = this.add.text(sp.x, sp.y, SLOT_META[slot].label, {
-        fontFamily: 'system-ui, sans-serif', fontSize: '26px', fontStyle: 'bold', color: '#0a0e1a',
+        fontFamily: 'system-ui, sans-serif', fontSize: '24px', fontStyle: 'bold', color: '#0a0e1a',
       }).setOrigin(0.5);
-
       this.state[slot] = {
         disc, label,
         scored: 0, conceded: 0,
         cooldownUntil: 0, prevShoot: false,
-        aim: this.defaultAim(slot),
+        aim: this.autoAimFrom(sp, slot),
+        discVel: { x: 0, y: 0 },
       };
     }
   }
 
   createBall() {
-    this.ball = this.physics.add.image(FIELD.cx, FIELD.cy, 'ballTex');
-    this.ball.body.setCircle(BR);
-    this.ball.setBounce(1);
-    this.ball.body.setDrag(CONFIG.BALL_DRAG, CONFIG.BALL_DRAG);
-    this.ball.setDamping(false);
-    this.ball.lastTouch = null;
-
-    this.physics.add.collider(this.ball, this.wallObjs);
-    this.physics.add.collider(this.ball, this.discGroup, (ball, disc) => {
-      // Any contact counts as a touch (deflection/save credits the last toucher).
-      if (this.heldBy !== disc.slot) ball.lastTouch = disc.slot;
-    });
+    this.ball = this.add.image(this.arena.center.x, this.arena.center.y, 'ballTex');
+    this.ball.setDepth(5);
   }
 
   createHud() {
-    this.timerText = this.add.text(DESIGN.W / 2, 24, '', {
+    this.timerText = this.add.text(DESIGN.W / 2, 20, '', {
       fontFamily: 'system-ui, sans-serif', fontSize: '52px', fontStyle: 'bold', color: '#eef1f7',
-    }).setOrigin(0.5, 0);
+    }).setOrigin(0.5, 0).setDepth(20);
 
-    this.banner = this.add.text(FIELD.cx, FIELD.cy - 40, '', {
-      fontFamily: 'system-ui, sans-serif', fontSize: '110px', fontStyle: 'bold', color: '#eef1f7',
-    }).setOrigin(0.5).setDepth(10);
+    this.banner = this.add.text(this.arena.center.x, this.arena.center.y - 40, '', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '104px', fontStyle: 'bold', color: '#eef1f7',
+    }).setOrigin(0.5).setDepth(20);
 
-    // Four corner panels (each labeled with its side so goals are unambiguous).
-    const corners = {
-      player_1: { x: 30, y: 26, ox: 0 },
-      player_2: { x: DESIGN.W - 30, y: 26, ox: 1 },
-      player_3: { x: DESIGN.W - 30, y: DESIGN.H - 92, ox: 1 },
-      player_4: { x: 30, y: DESIGN.H - 92, ox: 0 },
-    };
-    this.hud = {};
-    for (const slot of this.slots) {
-      const c = corners[slot];
-      const t = this.add.text(c.x, c.y, '', {
-        fontFamily: 'system-ui, sans-serif', fontSize: '34px', fontStyle: 'bold',
-        color: this.meta[slot].color, align: c.ox ? 'right' : 'left',
-      }).setOrigin(c.ox, 0);
-      this.hud[slot] = t;
-    }
+    this.add.text(30, 92, 'SCORES', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '24px', color: '#8b93a7',
+    }).setDepth(20);
+
+    this.hudRows = {};
+    this.slots.forEach((slot, i) => {
+      const y = 140 + i * 58;
+      const swatch = this.add.rectangle(44, y + 15, 30, 30, hexToNum(this.meta[slot].color)).setDepth(20);
+      const text = this.add.text(70, y, '', {
+        fontFamily: 'system-ui, sans-serif', fontSize: '28px', fontStyle: 'bold', color: this.meta[slot].color,
+      }).setDepth(20);
+      this.hudRows[slot] = { swatch, text };
+    });
   }
 
   // ---- ball lifecycle ------------------------------------------------------
@@ -185,9 +161,9 @@ export default class GameScene extends Phaser.Scene {
   dropBall() {
     this.heldBy = null;
     this.ballFrozen = true;
-    this.ball.lastTouch = null;
-    this.ball.body.setVelocity(0, 0);
-    this.ball.setPosition(FIELD.cx, FIELD.cy);
+    this.lastTouch = null;
+    this.bvel.x = 0; this.bvel.y = 0;
+    this.ball.setPosition(this.arena.center.x, this.arena.center.y);
 
     this.time.delayedCall(CONFIG.RESET_DELAY_MS, () => {
       if (this.over) return;
@@ -204,33 +180,26 @@ export default class GameScene extends Phaser.Scene {
   launchBallToRandom() {
     if (this.slots.length === 0) return;
     const slot = this.slots[Phaser.Math.Between(0, this.slots.length - 1)];
-    const sp = SPAWN[slot];
-    const dir = normalize(sp.x - FIELD.cx, sp.y - FIELD.cy);
-    this.ball.body.setVelocity(dir.x * CONFIG.RELEASE_SPEED, dir.y * CONFIG.RELEASE_SPEED);
+    const sp = this.arena.spawns[slot];
+    const d = normalize(sp.x - this.arena.center.x, sp.y - this.arena.center.y);
+    this.bvel.x = d.x * CONFIG.RELEASE_SPEED;
+    this.bvel.y = d.y * CONFIG.RELEASE_SPEED;
   }
 
   // ---- per-frame -----------------------------------------------------------
 
   update(t, dtMs) {
     if (this.over) return;
-    const dt = dtMs / 1000;
+    const dt = Math.min(dtMs, 50) / 1000;
 
     this.moveDiscs(dt);
+    if (!this.ballFrozen && dt > 0) this.simulateBall(dt, t);
 
-    if (!this.ballFrozen) {
-      this.updatePossession(t);
-      this.capBallSpeed();
-      this.updateIdle(dtMs);
-      this.checkGoals();
-    }
-
-    // Match clock.
     if (!this.suddenDeath && this.matchStarted && this.time.now >= this.matchEndAt) {
       this.handleTimeUp();
     }
     this.updateHud();
 
-    // Latch shoot state for rising-edge detection next frame.
     for (const slot of this.slots) this.state[slot].prevShoot = this.getSlotInput(slot).shoot;
   }
 
@@ -242,97 +211,128 @@ export default class GameScene extends Phaser.Scene {
       const m = Math.hypot(vx, vy);
       if (m > 1) { vx /= m; vy /= m; }
 
-      st.disc.body.setVelocity(vx * CONFIG.MOVE_SPEED, vy * CONFIG.MOVE_SPEED);
-
-      const c = clampToWedge(slot, { x: st.disc.x, y: st.disc.y });
-      if (Math.abs(c.x - st.disc.x) > 0.01 || Math.abs(c.y - st.disc.y) > 0.01) {
-        st.disc.body.reset(c.x, c.y);
-      }
-      st.label.setPosition(st.disc.x, st.disc.y);
+      const target = { x: st.disc.x + vx * CONFIG.MOVE_SPEED * dt, y: st.disc.y + vy * CONFIG.MOVE_SPEED * dt };
+      const c = this.arena.clamp(slot, target);
+      st.discVel = dt > 0 ? { x: (c.x - st.disc.x) / dt, y: (c.y - st.disc.y) / dt } : { x: 0, y: 0 };
+      st.disc.setPosition(c.x, c.y);
+      st.label.setPosition(c.x, c.y);
     }
   }
 
-  updatePossession(t) {
-    if (this.heldBy && this.state[this.heldBy]) {
-      const holder = this.heldBy;
-      const st = this.state[holder];
-      const inp = this.getSlotInput(holder);
+  simulateBall(dt, t) {
+    if (!this.heldBy) this.tryTrap(t);
+    if (this.heldBy) { this.holdLogic(t); return; }
 
-      // Aim from the joystick, else auto-aim at the nearest opponent goal.
-      let ax = inp.x, ay = inp.y;
-      const am = Math.hypot(ax, ay);
-      if (am > 0.25) { ax /= am; ay /= am; st.aim = { x: ax, y: ay }; }
-      else st.aim = this.autoAim(holder);
-
-      const off = DR + BR + CONFIG.HOLD_OFFSET;
-      this.ball.body.setVelocity(0, 0);
-      this.ball.setPosition(st.disc.x + st.aim.x * off, st.disc.y + st.aim.y * off);
-
-      const rising = inp.shoot && !st.prevShoot;
-      if (t - this.holdStart > CONFIG.HOLD_MS) this.shoot(holder, CONFIG.RELEASE_SPEED, t);
-      else if (rising) this.shoot(holder, CONFIG.SHOOT_SPEED, t);
-      return;
+    // Drag, then integrate.
+    const sp = this.ballSpeed();
+    if (sp > 0) {
+      const ns = Math.max(0, sp - CONFIG.BALL_DRAG * dt);
+      this.bvel.x = this.bvel.x / sp * ns;
+      this.bvel.y = this.bvel.y / sp * ns;
     }
+    this.ball.x += this.bvel.x * dt;
+    this.ball.y += this.bvel.y * dt;
 
-    // No holder: a slow enough ball near an off-cooldown disc gets trapped.
-    if (this.ballSpeed() <= CONFIG.TRAP_SPEED) {
-      let best = null, bestD = Infinity;
-      for (const slot of this.slots) {
-        const st = this.state[slot];
-        if (t < st.cooldownUntil) continue;
-        const d = Math.hypot(this.ball.x - st.disc.x, this.ball.y - st.disc.y);
-        if (d <= DR + BR + CONFIG.TRAP_PAD && d < bestD) { best = slot; bestD = d; }
-      }
-      if (best) this.trap(best, t);
+    const pos = { x: this.ball.x, y: this.ball.y };
+    const owner = this.arena.collideWall(pos, this.bvel, BR);
+    this.ball.setPosition(pos.x, pos.y);
+
+    this.collideDiscs();
+    this.capSpeed();
+    this.updateIdle(dt);
+
+    if (owner) this.onGoal(owner);
+  }
+
+  tryTrap(t) {
+    if (this.ballSpeed() > CONFIG.TRAP_SPEED) return;
+    let best = null, bestD = Infinity;
+    for (const slot of this.slots) {
+      const st = this.state[slot];
+      if (t < st.cooldownUntil) continue;
+      const d = Math.hypot(this.ball.x - st.disc.x, this.ball.y - st.disc.y);
+      if (d <= DR + BR + CONFIG.TRAP_PAD && d < bestD) { best = slot; bestD = d; }
+    }
+    if (best) {
+      this.heldBy = best;
+      this.holdStart = t;
+      this.lastTouch = best;
+      this.bvel.x = 0; this.bvel.y = 0;
+      this.state[best].aim = this.autoAim(best);
     }
   }
 
-  trap(slot, t) {
-    this.heldBy = slot;
-    this.holdStart = t;
-    this.ball.lastTouch = slot;
-    this.ball.body.setVelocity(0, 0);
-    this.state[slot].aim = this.autoAim(slot);
+  holdLogic(t) {
+    const holder = this.heldBy;
+    const st = this.state[holder];
+    if (!st) { this.heldBy = null; return; }
+    const inp = this.getSlotInput(holder);
+
+    let ax = inp.x, ay = inp.y;
+    const am = Math.hypot(ax, ay);
+    if (am > 0.25) { st.aim = { x: ax / am, y: ay / am }; }
+    else st.aim = this.autoAim(holder);
+
+    const off = DR + BR + CONFIG.HOLD_OFFSET;
+    this.ball.setPosition(st.disc.x + st.aim.x * off, st.disc.y + st.aim.y * off);
+    this.bvel.x = 0; this.bvel.y = 0;
+
+    const rising = inp.shoot && !st.prevShoot;
+    if (t - this.holdStart > CONFIG.HOLD_MS) this.shoot(holder, CONFIG.RELEASE_SPEED, t);
+    else if (rising) this.shoot(holder, CONFIG.SHOOT_SPEED, t);
   }
 
   shoot(slot, speed, t) {
     const a = this.state[slot].aim;
-    this.ball.body.setVelocity(a.x * speed, a.y * speed);
-    this.ball.lastTouch = slot;
+    this.bvel.x = a.x * speed;
+    this.bvel.y = a.y * speed;
+    this.lastTouch = slot;
     this.state[slot].cooldownUntil = t + CONFIG.TRAP_COOLDOWN_MS;
     this.heldBy = null;
   }
 
-  capBallSpeed() {
-    const b = this.ball.body;
-    const s = Math.hypot(b.velocity.x, b.velocity.y);
-    if (s > CONFIG.BALL_MAX_SPEED) {
-      const k = CONFIG.BALL_MAX_SPEED / s;
-      b.velocity.x *= k; b.velocity.y *= k;
+  collideDiscs() {
+    const minD = DR + BR;
+    for (const slot of this.slots) {
+      const st = this.state[slot];
+      const dx = this.ball.x - st.disc.x;
+      const dy = this.ball.y - st.disc.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist <= 0 || dist >= minD) continue;
+
+      const nx = dx / dist, ny = dy / dist;
+      this.ball.setPosition(st.disc.x + nx * minD, st.disc.y + ny * minD);
+      const vn = this.bvel.x * nx + this.bvel.y * ny;
+      if (vn < 0) { this.bvel.x -= 2 * vn * nx; this.bvel.y -= 2 * vn * ny; }
+      this.bvel.x += st.discVel.x * CONFIG.DISC_KICK;
+      this.bvel.y += st.discVel.y * CONFIG.DISC_KICK;
+      this.lastTouch = slot;
     }
   }
 
-  updateIdle(dtMs) {
+  capSpeed() {
+    const s = this.ballSpeed();
+    if (s > CONFIG.BALL_MAX_SPEED) {
+      const k = CONFIG.BALL_MAX_SPEED / s;
+      this.bvel.x *= k; this.bvel.y *= k;
+    }
+  }
+
+  updateIdle(dt) {
     if (this.heldBy) { this.ballIdle = 0; return; }
     if (this.ballSpeed() < 25) {
-      this.ballIdle += dtMs;
+      this.ballIdle += dt * 1000;
       if (this.ballIdle > CONFIG.IDLE_NUDGE_MS) { this.launchBallToRandom(); this.ballIdle = 0; }
     } else {
       this.ballIdle = 0;
     }
   }
 
-  checkGoals() {
-    const owner = goalOwnerAt(this.ball.x, this.ball.y, this.slots);
-    if (owner) { this.onGoal(owner); return; }
-    if (isBallLost(this.ball.x, this.ball.y)) this.dropBall();
-  }
-
   onGoal(owner) {
-    const scorer = this.ball.lastTouch;
-    this.state[owner].conceded += 1;
+    const scorer = this.lastTouch;
     let msg = 'OWN GOAL';
-    let color = this.meta[owner].color;
+    let color = this.meta[owner] ? this.meta[owner].color : '#ffffff';
+    if (this.state[owner]) this.state[owner].conceded += 1;
     if (scorer && scorer !== owner && this.state[scorer]) {
       this.state[scorer].scored += 1;
       msg = `${this.meta[scorer].name} SCORES!`;
@@ -353,12 +353,8 @@ export default class GameScene extends Phaser.Scene {
 
   handleTimeUp() {
     const s = this.standings();
-    if (this.uniqueLeader(s)) {
-      this.endMatch(s);
-    } else {
-      this.suddenDeath = true;
-      this.showBanner('SUDDEN DEATH', '#fbbf24', 1600);
-    }
+    if (this.uniqueLeader(s)) this.endMatch(s);
+    else { this.suddenDeath = true; this.showBanner('SUDDEN DEATH', '#fbbf24', 1600); }
   }
 
   standings() {
@@ -381,9 +377,7 @@ export default class GameScene extends Phaser.Scene {
   endMatch(standings) {
     if (this.over) return;
     this.over = true;
-    this.time.delayedCall(600, () => this.scene.start('ResultScene', {
-      standings, roomCode: Net.roomCode,
-    }));
+    this.time.delayedCall(600, () => this.scene.start('ResultScene', { standings, roomCode: Net.roomCode }));
   }
 
   // ---- input / aim ---------------------------------------------------------
@@ -399,28 +393,26 @@ export default class GameScene extends Phaser.Scene {
     return net;
   }
 
-  defaultAim(slot) {
-    // Point roughly toward the center of the field to start.
-    return normalize(FIELD.cx - SPAWN[slot].x, FIELD.cy - SPAWN[slot].y);
+  autoAim(slot) {
+    return this.autoAimFrom(this.state[slot].disc, slot);
   }
 
-  autoAim(slot) {
-    const from = this.state[slot].disc;
+  autoAimFrom(from, slot) {
     let best = null, bestD = Infinity;
     for (const other of this.slots) {
       if (other === slot) continue;
-      const g = goalCenter(other);
+      const g = this.arena.goalCenter(other);
       const d = Math.hypot(g.x - from.x, g.y - from.y);
       if (d < bestD) { bestD = d; best = g; }
     }
-    if (!best) return this.defaultAim(slot);
+    if (!best) return normalize(this.arena.center.x - from.x, this.arena.center.y - from.y);
     return normalize(best.x - from.x, best.y - from.y);
   }
 
   // ---- misc ----------------------------------------------------------------
 
   ballSpeed() {
-    return Math.hypot(this.ball.body.velocity.x, this.ball.body.velocity.y);
+    return Math.hypot(this.bvel.x, this.bvel.y);
   }
 
   removeSlot(slot) {
@@ -429,8 +421,8 @@ export default class GameScene extends Phaser.Scene {
     this.slots.splice(i, 1);
     if (this.heldBy === slot) this.heldBy = null;
     const st = this.state[slot];
-    if (st) { st.disc.destroy(); st.label.destroy(); }
-    if (this.hud[slot]) { this.hud[slot].setText(''); }
+    if (st) { st.disc.destroy(); st.label.destroy(); delete this.state[slot]; }
+    if (this.hudRows[slot]) { this.hudRows[slot].text.setText(''); this.hudRows[slot].swatch.setVisible(false); }
   }
 
   showBanner(text, color, ms = 1100) {
@@ -447,8 +439,7 @@ export default class GameScene extends Phaser.Scene {
     for (const slot of this.slots) {
       const st = this.state[slot];
       const diff = st.scored - st.conceded;
-      const side = SLOT_META[slot].side.toUpperCase();
-      this.hud[slot].setText(`${side} · ${this.meta[slot].name}\n${signed(diff)}   ${st.scored}-${st.conceded}`);
+      this.hudRows[slot].text.setText(`${this.meta[slot].name}   ${signed(diff)}   ${st.scored}-${st.conceded}`);
     }
   }
 }

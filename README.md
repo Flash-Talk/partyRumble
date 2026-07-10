@@ -1,9 +1,11 @@
-# 4-Way Penalty Rumble 🥅⚽
+# Penalty Rumble 🥅⚽
 
-A local party game for a TV + phones. The **TV** is a shared square arena with
-four goals; each player's **phone** is a wireless joystick. When the ball is in
-your zone you attack and shoot at everyone else's goal; when it isn't, you're the
-goalie. Timed match, **best goal difference wins**.
+A party game for a TV + phones, **2–8 players**. The **TV** is a shared arena that
+reshapes to the player count — a regular polygon (triangle → … → octagon) where
+each player owns one side (their goal) and an equal wedge. Each player's **phone**
+is a wireless joystick. When the ball is in your zone you attack and shoot at
+everyone else's goal; when it isn't, you're the goalie. Timed match,
+**best goal difference wins**.
 
 Built on the platform described in [`partyGame.md`](./partyGame.md): a Node +
 socket.io relay server, a Phaser TV screen, and a vanilla-JS phone controller.
@@ -43,9 +45,9 @@ Open `http://localhost:3000/tv?debug=1`, join a phone (or another browser tab at
 
 ## How to play
 
-- **Arena:** a square split into four triangular zones — one wall + goal per
-  player (top / right / bottom / left). You can move only **inside your own
-  zone**; the ball flies across the whole field.
+- **Arena:** a regular polygon that fits the player count — each player owns one
+  side (their goal) and an equal triangular wedge from that side to the center.
+  You can move only **inside your own zone**; the ball flies across the whole field.
 - **Attack:** when the ball touches your disc it **sticks** to you. Aim with the
   joystick, tap **SHOOT** to fire it at an opponent's goal. You can only hold it
   ~2.5s before it auto-releases.
@@ -54,7 +56,8 @@ Open `http://localhost:3000/tv?debug=1`, join a phone (or another browser tab at
 - **Score:** put the ball in someone's goal → **+1 for you, −1 for them**.
 - **Win:** after **90 seconds**, best **goal difference** (scored − conceded)
   wins. A tie goes to **sudden death** — next goal decides.
-- **2–4 players:** unclaimed walls are solid (no goal), so 2 or 3 players work too.
+- **2–8 players:** the arena reshapes each round to however many joined (2 = a
+  face-off rectangle, 3 = triangle, 4 = square, … 8 = octagon).
 
 **Controller:** left ⅔ of the screen is a floating joystick, right is the SHOOT
 button. Uses `touchstart`/`touchend` for zero tap-delay.
