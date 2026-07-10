@@ -200,6 +200,7 @@ const unoDraw = $('unoDraw');
 const unoPass = $('unoPass');
 const unoUno = $('unoUno');
 const colorPicker = $('colorPicker');
+const cpCancel = $('cpCancel');
 
 const UNO_COLORS = { red: '#ef4444', yellow: '#eab308', green: '#22c55e', blue: '#3b82f6' };
 const unoColorHex = (c) => UNO_COLORS[c] || '#9aa4bf';
@@ -298,6 +299,12 @@ function renderUno(h) {
   }
   unoMsg.textContent = hint;
   unoMsg.className = hint ? 'hint' : '';
+
+  // Safety: never leave the color picker open once it's no longer your turn.
+  if (!h.yourTurn && colorPicker.classList.contains('show')) {
+    colorPicker.classList.remove('show');
+    pendingWild = null;
+  }
 }
 
 function onCardTap(card) {
@@ -316,6 +323,10 @@ colorPicker.querySelectorAll('.cp').forEach((btn) => {
   btn.addEventListener('touchstart', pick, { passive: false });
   btn.addEventListener('click', pick);
 });
+
+const cancelPick = (e) => { if (e) e.preventDefault(); pendingWild = null; colorPicker.classList.remove('show'); };
+cpCancel.addEventListener('touchstart', cancelPick, { passive: false });
+cpCancel.addEventListener('click', cancelPick);
 
 function bindUno(btn, action, guard) {
   const fire = (e) => { if (e) e.preventDefault(); if (guard && guard()) return; socket.emit('uno_action', { action }); };
