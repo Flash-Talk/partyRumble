@@ -4,6 +4,7 @@ const uno = require('./unoService');
 const amongus = require('./amongusService');
 const poker = require('./pokerService');
 const rummy = require('./rummyService');
+const { signCode, verifyCode } = require('./roomToken');
 
 /**
  * Wire socket.io events to the RoomManager. The server relays controller input
@@ -24,6 +25,7 @@ function registerHandlers(io, rooms) {
     socket.on('create_room', (payload = {}) => {
       const token = payload.token || null;
       const resumeCode = payload.roomCode ? String(payload.roomCode).toUpperCase() : null;
+      const roomToken = payload.roomToken || null;
 
       // Reconnecting host: reattach and replay the current roster.
       if (resumeCode && token) {
@@ -32,7 +34,7 @@ function registerHandlers(io, rooms) {
           socket.data.role = 'tv';
           socket.data.roomCode = room.code;
           socket.join(room.code);
-          socket.emit('room_created', { roomCode: room.code, resumed: true });
+          socket.emit('room_created', { roomCode: room.code, roomToken: signCode(room.code), resumed: true });
           for (const p of room.players.values()) {
             socket.emit('player_joined', { id: p.id, slot: p.slot, name: p.name, color: p.color });
           }
@@ -42,15 +44,16 @@ function registerHandlers(io, rooms) {
         // Resume failed and the room is genuinely gone (e.g. the server
         // restarted / redeployed, wiping in-memory rooms). Recreate it under the
         // SAME code so phones still holding that code can reconnect instead of
-        // being dead-ended with "Room not found". The active game state is lost,
-        // so everyone returns to the lobby. (A code that still exists but with a
-        // mismatched token is an impostor — fall through to a fresh room.)
-        if (!rooms.getRoom(resumeCode)) {
+        // being dead-ended with "Room not found". Only honor the requested code
+        // if the host presents a valid roomToken — the HMAC the server issued at
+        // creation — so a client can't squat or impersonate an arbitrary code.
+        // (Impostors, or a stale/absent token, fall through to a fresh code.)
+        if (!rooms.getRoom(resumeCode) && verifyCode(resumeCode, roomToken)) {
           const code = rooms.createRoom(socket.id, token, resumeCode);
           socket.data.role = 'tv';
           socket.data.roomCode = code;
           socket.join(code);
-          socket.emit('room_created', { roomCode: code, recreated: code === resumeCode });
+          socket.emit('room_created', { roomCode: code, roomToken: signCode(code), recreated: code === resumeCode });
           return;
         }
       }
@@ -58,15 +61,16 @@ function registerHandlers(io, rooms) {
       // One room per TV socket; reuse if it already made one.
       const existing = rooms.findRoomByTv(socket.id);
       if (existing) {
-        socket.emit('room_created', { roomCode: existing.code });
+        socket.emit('room_created', { roomCode: existing.code, roomToken: signCode(existing.code) });
         return;
       }
 
+      // Brand-new room: always a fresh server-allocated code (never caller-chosen).
       const roomCode = rooms.createRoom(socket.id, token);
       socket.data.role = 'tv';
       socket.data.roomCode = roomCode;
       socket.join(roomCode);
-      socket.emit('room_created', { roomCode });
+      socket.emit('room_created', { roomCode, roomToken: signCode(roomCode) });
     });
 
     // --- Mobile joins a room ----------------------------------------------

@@ -6,6 +6,7 @@ class Net {
   constructor() {
     this.socket = null;
     this.roomCode = null;
+    this.roomToken = null;     // HMAC proving we own roomCode (for post-restart resume)
     this.players = new Map();  // slot -> { slot, name, color, id }
     this.inputs = new Map();   // slot -> { x, y, shoot }
     this.events = new Phaser.Events.EventEmitter();
@@ -20,17 +21,21 @@ class Net {
     this.socket = io();
 
     this.socket.on('connect', () => {
-      // Send our host token (+ last room) so a reconnect reclaims the same room
-      // and roster instead of orphaning the party.
+      // Send our host token (+ last room and its ownership signature) so a
+      // reconnect reclaims the same room and roster instead of orphaning the
+      // party — and, after a server restart, can prove it owned that code.
       this.socket.emit('create_room', {
         token: this.hostToken,
         roomCode: this.roomCode || this._read('pg_host_room'),
+        roomToken: this.roomToken || this._read('pg_host_roomtoken'),
       });
     });
 
-    this.socket.on('room_created', ({ roomCode, recreated }) => {
+    this.socket.on('room_created', ({ roomCode, roomToken, recreated }) => {
       this.roomCode = roomCode;
+      this.roomToken = roomToken || null;
       this._write('pg_host_room', roomCode);
+      if (roomToken) this._write('pg_host_roomtoken', roomToken);
       this.events.emit('room_ready', roomCode);
       // The server lost our room (restart/redeploy) and rebuilt it under the same
       // code; the in-flight game and roster are gone. Clear the stale roster

@@ -220,23 +220,50 @@ test('TV reconnect with the host token reclaims the same room and roster', async
 
 test('TV resuming a room the server no longer has recreates it under the same code', async (t) => {
   // Simulates a server restart (in-memory rooms wiped): the TV reconnects with
-  // its host token + last room code, and phones still hold that code.
+  // its host token + last room code + the ownership token, and phones still hold
+  // that code.
   const ctx = await startServer();
   t.after(() => stopServer(ctx));
 
   const tv = connect(ctx.port);
   t.after(() => tv.close());
   await once(tv, 'connect');
-  tv.emit('create_room', { token: 'host-1', roomCode: 'WXYZ' }); // no such room exists yet
-  const rc = await once(tv, 'room_created');
-  assert.equal(rc.roomCode, 'WXYZ', 'room recreated under the same code');
-  assert.equal(rc.recreated, true);
+  tv.emit('create_room', { token: 'host-1' });                 // normal create → server-issued code + token
+  const first = await once(tv, 'room_created');
+  const { roomCode, roomToken } = first;
+  assert.match(roomCode, /^[A-Z]{4}$/);
+  assert.ok(roomToken, 'an ownership token is issued');
+
+  ctx.rooms.closeRoom(roomCode);                                // the server "loses" the room
+
+  const tv2 = connect(ctx.port);
+  t.after(() => tv2.close());
+  await once(tv2, 'connect');
+  tv2.emit('create_room', { token: 'host-1', roomCode, roomToken }); // prove ownership
+  const again = await once(tv2, 'room_created');
+  assert.equal(again.roomCode, roomCode, 'room recreated under the same code');
+  assert.equal(again.recreated, true);
 
   // A phone holding that code can now reconnect instead of hitting "Room not found".
-  const p = await joinPlayer(ctx.port, 'WXYZ', 'Ann');
+  const p = await joinPlayer(ctx.port, roomCode, 'Ann');
   t.after(() => p.close());
   const ok = await once(p, 'join_success');
   assert.equal(ok.slot, 'player_1');
+});
+
+test('room-code squatting is refused without a valid ownership token', async (t) => {
+  // An attacker cannot claim an arbitrary code by forging the resume payload.
+  const ctx = await startServer();
+  t.after(() => stopServer(ctx));
+
+  const attacker = connect(ctx.port);
+  t.after(() => attacker.close());
+  await once(attacker, 'connect');
+  attacker.emit('create_room', { token: 'x', roomCode: 'WXYZ', roomToken: 'forged' });
+  const rc = await once(attacker, 'room_created');
+  assert.notEqual(rc.roomCode, 'WXYZ', 'attacker cannot claim an arbitrary code');
+  assert.notEqual(rc.recreated, true);
+  assert.match(rc.roomCode, /^[A-Z]{4}$/);
 });
 
 test('resume with the wrong token does NOT hijack a room (a new room is made)', async (t) => {
