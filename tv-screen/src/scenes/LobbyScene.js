@@ -21,6 +21,7 @@ export default class LobbyScene extends Phaser.Scene {
       { key: 'penalty', name: 'Penalty Rumble', min: 2 },
       { key: 'uno', name: 'UNO', min: 2 },
       { key: 'amongus', name: 'Among Us', min: 4 },
+      { key: 'poker', name: "Texas Hold'em", min: 2 },
     ];
     this.gameIndex = 0;
     this.tiltLatch = false;
@@ -155,6 +156,7 @@ export default class LobbyScene extends Phaser.Scene {
     const g = this.games[this.gameIndex];
     if (g.key === 'uno') { Net.startUno(); this.scene.start('UnoScene'); }
     else if (g.key === 'amongus') { Net.startAmongUs(); this.scene.start('AmongUsScene'); }
+    else if (g.key === 'poker') { Net.startPoker(); this.scene.start('PokerScene'); }
     else this.scene.start('GameScene');
   }
 

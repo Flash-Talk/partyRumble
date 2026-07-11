@@ -33,6 +33,18 @@ meltdown** the crew must race to fix or lose. Games of **7+ players get two
 imposters** who know each other. Server-authoritative, so the imposter's identity
 never touches the TV.
 
+### ♠️ Texas Hold'em (poker tournament, 2–8 players)
+Full-betting Texas Hold'em played as a **tournament**: everyone starts with an
+equal stack, **blinds** are posted each hand, and you **bust out** when you hit
+zero — the game keeps dealing until one player has **all the chips**. The **TV**
+is the felt table: community cards and the pot in the middle, every seat's chips
+and bet, the **dealer button** and blinds, a **countdown ring** on whoever's on
+the clock, and a **showdown** that flips the winners' cards. Your **phone** shows
+your two hole cards, the board, and the pot, with **FOLD / CHECK · CALL / RAISE**
+(a size slider with ½-pot / pot / all-in shortcuts). An idle seat is
+auto-checked-or-folded after 30s so the table never stalls. Server-authoritative
+— your hole cards never touch the TV until showdown.
+
 > **Sound:** the TV synthesizes music + SFX (no audio files). Browsers block
 > autoplay, so **press a key or tap the TV once** to enable sound.
 

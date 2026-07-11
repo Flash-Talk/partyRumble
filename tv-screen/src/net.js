@@ -69,6 +69,11 @@ class Net {
     this.socket.on('amongus_start', ({ map }) => { this.amongusMap = map; this.events.emit('amongus_start', map); });
     this.socket.on('amongus_state', (state) => { this.amongusState = state; this.events.emit('amongus_state', state); });
     this.socket.on('amongus_over', (data) => { this.amongusState = null; this.events.emit('amongus_over', data); });
+
+    // Poker (server-authoritative): the TV renders public table state.
+    this.pokerState = null;
+    this.socket.on('poker_state', (state) => { this.pokerState = state; this.events.emit('poker_state', state); });
+    this.socket.on('poker_over', (data) => { this.pokerState = null; this.events.emit('poker_over', data); });
   }
 
   startUno() {
@@ -77,6 +82,10 @@ class Net {
 
   startAmongUs() {
     if (this.socket) this.socket.emit('start_amongus');
+  }
+
+  startPoker() {
+    if (this.socket) this.socket.emit('start_poker');
   }
 
   getInput(slot) {

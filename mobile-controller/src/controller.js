@@ -35,6 +35,7 @@ let roomCode = (params.get('room') || localStorage.getItem('pg_room') || '').toU
 let playerName = localStorage.getItem('pg_name') || '';
 let wantJoin = false; // true once the user has committed to joining (drives auto-rejoin)
 let joined = false;
+let mySlot = null;         // our assigned slot (player_N), set on join
 let amongusActive = false; // true between amongus_role and amongus_over
 let amongusYou = null;     // latest private Among Us state
 
@@ -75,6 +76,7 @@ socket.on('disconnect', () => {
 socket.on('join_success', ({ slot, color }) => {
   joined = true;
   wantJoin = true;
+  mySlot = slot;
   localStorage.setItem('pg_name', playerName);
   localStorage.setItem('pg_room', roomCode);
 
@@ -715,6 +717,199 @@ function renderReveal(you) {
     avStatus.textContent = r.wasImposter ? '…and WAS the imposter! 🎉' : '…was NOT the imposter.';
   }
 }
+
+// ---- Poker (Texas Hold'em) ----
+const pokerEl = $('poker');
+const pokerTurn = $('pokerTurn');
+const pokerTimer = $('pokerTimer');
+const pokerPot = $('pokerPot');
+const pokerCommunity = $('pokerCommunity');
+const pokerStreet = $('pokerStreet');
+const pokerStack = $('pokerStack');
+const pokerHole = $('pokerHole');
+const pokerMsg = $('pokerMsg');
+const pokerFold = $('pokerFold');
+const pokerCall = $('pokerCall');
+const pokerRaise = $('pokerRaise');
+const pokerRaisePicker = $('pokerRaisePicker');
+const prAmount = $('prAmount');
+const prSlider = $('prSlider');
+const prConfirm = $('prConfirm');
+const prCancel = $('prCancel');
+
+const POKER_SUIT = { s: '♠', h: '♥', d: '♦', c: '♣' };
+let pokerActive = false;
+let pokerYou = null;         // latest { hole, status, yourTurn, legalActions, state }
+let pokerTimerLoop = null;
+
+function bindTap(el, fn) {
+  el.addEventListener('touchstart', (e) => { e.preventDefault(); fn(); }, { passive: false });
+  el.addEventListener('click', fn);
+}
+
+function pokerCardEl(card, size) {
+  const el = document.createElement('div');
+  el.className = `pcard ${size}` + ((card.suit === 'h' || card.suit === 'd') ? ' red' : '');
+  const r = document.createElement('span'); r.className = 'pc-rank'; r.textContent = card.rank;
+  const s = document.createElement('span'); s.className = 'pc-suit'; s.textContent = POKER_SUIT[card.suit];
+  el.appendChild(r); el.appendChild(s);
+  return el;
+}
+
+socket.on('poker_hole', (h) => enterPoker(h));
+socket.on('poker_over', () => exitPoker());
+socket.on('poker_error', ({ message }) => {
+  pokerMsg.textContent = message || '';
+  pokerMsg.className = 'err';
+  setTimeout(() => { if (pokerMsg.textContent === message) { pokerMsg.textContent = ''; pokerMsg.className = ''; } }, 1500);
+});
+
+function enterPoker(h) {
+  pokerActive = true;
+  joinEl.style.display = 'none';
+  controllerEl.style.display = 'none';
+  unoEl.style.display = 'none';
+  pokerEl.style.display = 'flex';
+  if (!pokerTimerLoop) pokerTimerLoop = setInterval(updatePokerTimer, 250);
+  renderPoker(h);
+}
+
+function exitPoker() {
+  pokerActive = false;
+  pokerYou = null;
+  if (pokerTimerLoop) { clearInterval(pokerTimerLoop); pokerTimerLoop = null; }
+  pokerRaisePicker.classList.remove('show');
+  pokerEl.style.display = 'none';
+  controllerEl.style.display = 'flex';
+}
+
+function pokerName(state, slot) {
+  const p = state.players.find((x) => x.slot === slot);
+  return p ? p.name : '…';
+}
+
+function renderPoker(h) {
+  pokerYou = h;
+  const st = h.state;
+  if (!st) return;
+  const me = st.players.find((p) => p.slot === mySlot);
+  const la = h.legalActions || {};
+  const yourTurn = h.yourTurn && st.phase === 'playing';
+
+  pokerTurn.textContent = yourTurn ? 'YOUR TURN'
+    : (st.toAct ? `Waiting for ${pokerName(st, st.toAct)}…`
+      : (st.street === 'handover' ? 'Hand over' : '…'));
+  pokerTurn.className = yourTurn ? 'you' : 'wait';
+
+  pokerPot.textContent = `POT ${st.pot}`;
+  pokerStreet.textContent = st.street;
+  pokerStack.textContent = me ? `${me.stack} chips` : '';
+
+  // Community cards (mirror of the TV), filling empty slots.
+  pokerCommunity.innerHTML = '';
+  for (let i = 0; i < 5; i++) {
+    const c = st.community[i];
+    if (c) pokerCommunity.appendChild(pokerCardEl(c, 'small'));
+    else { const s = document.createElement('div'); s.className = 'pslot'; pokerCommunity.appendChild(s); }
+  }
+
+  // Your hole cards.
+  pokerHole.innerHTML = '';
+  const hole = h.hole || [];
+  if (hole.length) hole.forEach((c) => pokerHole.appendChild(pokerCardEl(c, 'big')));
+  else {
+    const t = document.createElement('div');
+    t.style.color = '#8b93a7';
+    t.textContent = (me && me.status === 'out') ? 'You are out of the tournament' : '—';
+    pokerHole.appendChild(t);
+  }
+
+  // Action buttons.
+  pokerFold.disabled = !yourTurn || la.canFold === false;
+  pokerCall.textContent = la.canCheck ? 'CHECK' : `CALL ${la.callAmount || 0}`;
+  pokerCall.disabled = !yourTurn || (!la.canCheck && !la.canCall);
+  const raiseAvail = yourTurn && la.canRaise;
+  pokerRaise.disabled = !raiseAvail;
+  pokerRaise.textContent = (raiseAvail && la.minRaiseTo === la.maxRaiseTo) ? 'ALL-IN' : 'RAISE';
+
+  // Guidance / result line.
+  let msg = '';
+  const hr = st.handResult;
+  if (st.street === 'handover' && hr && hr.winners) {
+    const mine = hr.winners.find((w) => w.slot === mySlot);
+    if (mine) { msg = `You win ${mine.amount}${mine.hand ? ' · ' + mine.hand : ''}!`; pokerMsg.className = 'good'; }
+    else { msg = hr.winners.map((w) => `${w.name} wins ${w.amount}`).join(', '); pokerMsg.className = ''; }
+  } else if (yourTurn) {
+    msg = la.canCheck ? 'Check, raise, or fold' : `Call ${la.callAmount}, raise, or fold`;
+    pokerMsg.className = '';
+  } else if (me && me.status === 'folded') {
+    msg = 'You folded this hand';
+    pokerMsg.className = '';
+  } else {
+    pokerMsg.className = '';
+  }
+  pokerMsg.textContent = msg;
+
+  if (!yourTurn && pokerRaisePicker.classList.contains('show')) pokerRaisePicker.classList.remove('show');
+  updatePokerTimer();
+}
+
+function updatePokerTimer() {
+  if (!pokerActive || !pokerYou || !pokerYou.state) { pokerTimer.textContent = ''; return; }
+  const ends = pokerYou.state.turnEndsAt;
+  if (!ends) { pokerTimer.textContent = ''; return; }
+  const rem = Math.max(0, Math.ceil((ends - Date.now()) / 1000));
+  pokerTimer.textContent = `⏱ ${rem}s`;
+}
+
+function pokerAct(action, amount) { socket.emit('poker_action', { action, amount }); }
+
+bindTap(pokerFold, () => { if (!pokerFold.disabled) pokerAct('fold'); });
+bindTap(pokerCall, () => {
+  if (pokerCall.disabled) return;
+  const la = pokerYou && pokerYou.legalActions;
+  if (la && la.canCheck) pokerAct('check'); else pokerAct('call');
+});
+bindTap(pokerRaise, () => { if (!pokerRaise.disabled) openRaise(); });
+
+function openRaise() {
+  const la = pokerYou && pokerYou.legalActions;
+  if (!la || !la.canRaise) return;
+  prSlider.min = la.minRaiseTo;
+  prSlider.max = la.maxRaiseTo;
+  prSlider.step = Math.max(1, (pokerYou.state && pokerYou.state.bigBlind) || 1);
+  prSlider.value = la.minRaiseTo;
+  prAmount.textContent = la.minRaiseTo;
+  pokerRaisePicker.classList.add('show');
+}
+
+prSlider.addEventListener('input', () => { prAmount.textContent = prSlider.value; });
+
+document.querySelectorAll('#pokerRaisePicker .pr-quick button').forEach((btn) => {
+  const fire = (e) => {
+    if (e) e.preventDefault();
+    const la = pokerYou && pokerYou.legalActions;
+    const st = pokerYou && pokerYou.state;
+    if (!la || !st) return;
+    const clamp = (v) => Math.max(la.minRaiseTo, Math.min(la.maxRaiseTo, Math.round(v)));
+    let v = la.minRaiseTo;
+    const q = btn.dataset.q;
+    if (q === 'half') v = clamp(st.currentBet + st.pot * 0.5);
+    else if (q === 'pot') v = clamp(st.currentBet + st.pot);
+    else if (q === 'max') v = la.maxRaiseTo;
+    prSlider.value = v;
+    prAmount.textContent = v;
+  };
+  btn.addEventListener('click', fire);
+  btn.addEventListener('touchstart', fire, { passive: false });
+});
+
+bindTap(prConfirm, () => {
+  const v = parseInt(prSlider.value, 10);
+  pokerRaisePicker.classList.remove('show');
+  pokerAct('raise', v);
+});
+bindTap(prCancel, () => { pokerRaisePicker.classList.remove('show'); });
 
 // ---- boot ----
 initJoinScreen();

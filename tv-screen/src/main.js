@@ -5,6 +5,7 @@ import GameScene from './scenes/GameScene.js';
 import ResultScene from './scenes/ResultScene.js';
 import UnoScene from './scenes/UnoScene.js';
 import AmongUsScene from './scenes/AmongUsScene.js';
+import PokerScene from './scenes/PokerScene.js';
 import Net from './net.js';
 import audio from './audio.js';
 import { DESIGN } from './config.js';
@@ -25,7 +26,7 @@ const game = new Phaser.Game({
     width: DESIGN.W,
     height: DESIGN.H,
   },
-  scene: [BootScene, LobbyScene, GameScene, ResultScene, UnoScene, AmongUsScene],
+  scene: [BootScene, LobbyScene, GameScene, ResultScene, UnoScene, AmongUsScene, PokerScene],
 });
 
 // Opt-in debug handles for automated smoke tests (only with ?debug in the URL).

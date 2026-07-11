@@ -258,6 +258,62 @@
     .sm-title { font-size: 28px; font-weight: 900; color: #ff6b6b; }
     .sm-btn { width: 280px; padding: 20px; font-size: 20px; font-weight: 800; border: 3px solid #ef4444; border-radius: 14px; background: #2a1010; color: #fff; }
     #sabCancel { width: 280px; flex: none; background: #263056; }
+
+    /* ---- Poker (Texas Hold'em) ---- */
+    #poker { position: absolute; inset: 0; z-index: 17; display: none; flex-direction: column; background: var(--bg); }
+    #pokerTop { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: rgba(0,0,0,0.28); }
+    #pokerTurn { font-size: 20px; font-weight: 800; }
+    #pokerTurn.you { color: #4ade80; }
+    #pokerTurn.wait { color: #8b93a7; }
+    #pokerTimer { margin-left: auto; font-size: 16px; font-weight: 800; color: #ffe08a; }
+    #pokerBoard {
+      flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 12px;
+      background: radial-gradient(130% 100% at 50% 0%, #0b3d2e 0%, var(--bg) 92%);
+    }
+    #pokerPot { font-size: 22px; font-weight: 900; color: #ffe08a; }
+    #pokerCommunity { display: flex; gap: 8px; }
+    #pokerInfo { display: flex; justify-content: space-between; padding: 8px 16px; color: #8b93a7; font-size: 14px; }
+    #pokerStreet { text-transform: capitalize; }
+    #pokerStack { color: #ffe08a; font-weight: 800; }
+    #pokerHole { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; gap: 16px; min-height: 0; }
+    #pokerMsg { min-height: 22px; text-align: center; font-weight: 700; font-size: 15px; color: #8b93a7; padding: 2px 12px; }
+    #pokerMsg.err { color: #ff6b6b; }
+    #pokerMsg.good { color: #4ade80; }
+    #pokerActions { flex: 0 0 auto; display: flex; gap: 10px; padding: 12px 14px calc(12px + env(safe-area-inset-bottom)); }
+    .pbtn { flex: 1; padding: 18px 8px; font-size: 19px; font-weight: 800; border: none; border-radius: 14px; background: #263056; color: #eef1f7; }
+    .pbtn:disabled { opacity: 0.35; }
+    .pbtn:active:not(:disabled) { transform: translateY(1px); filter: brightness(0.95); }
+    .pbtn.fold { background: #7f1d1d; color: #fff; }
+    .pbtn.call { background: #1f6f52; color: #fff; }
+    .pbtn.raise { background: #e8a33a; color: #211603; }
+
+    .pcard {
+      position: relative; background: #fff; color: #12131a; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center; font-weight: 900;
+      box-shadow: 0 3px 8px rgba(0,0,0,0.4);
+    }
+    .pcard.red { color: #d1324a; }
+    .pcard .pc-rank { position: absolute; top: 3px; left: 6px; }
+    .pcard.big { width: 96px; height: 134px; }
+    .pcard.big .pc-rank { font-size: 22px; }
+    .pcard.big .pc-suit { font-size: 58px; }
+    .pcard.small { width: 52px; height: 74px; }
+    .pcard.small .pc-rank { font-size: 12px; top: 2px; left: 5px; }
+    .pcard.small .pc-suit { font-size: 27px; }
+    .pslot { width: 52px; height: 74px; border: 2px dashed #1f7a5a; border-radius: 10px; opacity: 0.5; }
+
+    #pokerRaisePicker {
+      position: absolute; inset: 0; z-index: 18; display: none;
+      flex-direction: column; align-items: center; justify-content: center; gap: 20px;
+      background: rgba(6,10,22,0.95); padding: 24px;
+    }
+    #pokerRaisePicker.show { display: flex; }
+    .pr-title { font-size: 24px; font-weight: 800; }
+    #prAmount { color: #ffe08a; }
+    #prSlider { width: 100%; max-width: 340px; }
+    .pr-quick { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+    .pr-quick button { padding: 12px 16px; font-size: 16px; font-weight: 800; border: none; border-radius: 12px; background: #263056; color: #eef1f7; }
+    .pr-row { display: flex; gap: 12px; width: 100%; max-width: 340px; }
   </style>
 </head>
 <body>
@@ -368,6 +424,43 @@
     <button class="sm-btn" data-kind="reactor">⚠️ Reactor Meltdown</button>
     <button class="sm-btn" data-kind="lights">💡 Lights</button>
     <button id="sabCancel" class="ubtn">Cancel</button>
+  </section>
+
+  <!-- Poker (Texas Hold'em) UI (shown only during a poker game) -->
+  <section id="poker">
+    <div id="pokerTop">
+      <span id="pokerTurn">—</span>
+      <span id="pokerTimer"></span>
+    </div>
+    <div id="pokerBoard">
+      <div id="pokerPot">POT 0</div>
+      <div id="pokerCommunity"></div>
+    </div>
+    <div id="pokerInfo">
+      <span id="pokerStreet"></span>
+      <span id="pokerStack"></span>
+    </div>
+    <div id="pokerHole"></div>
+    <div id="pokerMsg"></div>
+    <div id="pokerActions">
+      <button id="pokerFold" class="pbtn fold">FOLD</button>
+      <button id="pokerCall" class="pbtn call">CHECK</button>
+      <button id="pokerRaise" class="pbtn raise">RAISE</button>
+    </div>
+    <div id="pokerRaisePicker">
+      <div class="pr-title">Raise to <span id="prAmount">0</span></div>
+      <input id="prSlider" type="range" min="0" max="100" value="0" />
+      <div class="pr-quick">
+        <button data-q="min">Min</button>
+        <button data-q="half">½ Pot</button>
+        <button data-q="pot">Pot</button>
+        <button data-q="max">All-in</button>
+      </div>
+      <div class="pr-row">
+        <button id="prCancel" class="pbtn">Cancel</button>
+        <button id="prConfirm" class="pbtn raise">CONFIRM</button>
+      </div>
+    </div>
   </section>
 
   <script src="/socket.io/socket.io.js"></script>
