@@ -26,8 +26,13 @@ class RoomManager {
 
   // ---- rooms ---------------------------------------------------------------
 
-  createRoom(tvSocketId, hostToken = null) {
-    const code = this._generateUniqueCode();
+  createRoom(tvSocketId, hostToken = null, desiredCode = null) {
+    // Reuse a specific code (e.g. a host reconnecting after the server lost the
+    // room) when it is well-formed and currently free; otherwise allocate one.
+    const codeOk = desiredCode
+      && new RegExp(`^[${this.config.ROOM_CODE_ALPHABET}]{${this.config.ROOM_CODE_LENGTH}}$`).test(desiredCode)
+      && !this.rooms.has(desiredCode);
+    const code = codeOk ? desiredCode : this._generateUniqueCode();
     this.rooms.set(code, {
       code,
       tvSocketId,

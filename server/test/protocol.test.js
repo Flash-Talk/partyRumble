@@ -218,6 +218,27 @@ test('TV reconnect with the host token reclaims the same room and roster', async
   assert.equal(g.slot, 'player_1');
 });
 
+test('TV resuming a room the server no longer has recreates it under the same code', async (t) => {
+  // Simulates a server restart (in-memory rooms wiped): the TV reconnects with
+  // its host token + last room code, and phones still hold that code.
+  const ctx = await startServer();
+  t.after(() => stopServer(ctx));
+
+  const tv = connect(ctx.port);
+  t.after(() => tv.close());
+  await once(tv, 'connect');
+  tv.emit('create_room', { token: 'host-1', roomCode: 'WXYZ' }); // no such room exists yet
+  const rc = await once(tv, 'room_created');
+  assert.equal(rc.roomCode, 'WXYZ', 'room recreated under the same code');
+  assert.equal(rc.recreated, true);
+
+  // A phone holding that code can now reconnect instead of hitting "Room not found".
+  const p = await joinPlayer(ctx.port, 'WXYZ', 'Ann');
+  t.after(() => p.close());
+  const ok = await once(p, 'join_success');
+  assert.equal(ok.slot, 'player_1');
+});
+
 test('resume with the wrong token does NOT hijack a room (a new room is made)', async (t) => {
   const ctx = await startServer();
   t.after(() => stopServer(ctx));

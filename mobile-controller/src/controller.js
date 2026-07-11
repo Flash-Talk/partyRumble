@@ -86,7 +86,14 @@ socket.on('join_success', ({ slot, color }) => {
   slotLabel.textContent = `${playerName} · ${slot.replace('player_', 'P')}`;
   setStatus('connected', 'live');
 
+  // Reset to the controller/lobby view. If a game is still live, the server's
+  // resend (fired right after join_success) re-enters it; if the game is gone
+  // (e.g. the server restarted), we correctly stay in the lobby instead of
+  // being stuck on a frozen game screen.
   joinEl.style.display = 'none';
+  unoEl.style.display = 'none';
+  pokerEl.style.display = 'none';
+  rummyEl.style.display = 'none';
   controllerEl.style.display = 'flex';
 });
 

@@ -28,10 +28,20 @@ class Net {
       });
     });
 
-    this.socket.on('room_created', ({ roomCode }) => {
+    this.socket.on('room_created', ({ roomCode, recreated }) => {
       this.roomCode = roomCode;
       this._write('pg_host_room', roomCode);
       this.events.emit('room_ready', roomCode);
+      // The server lost our room (restart/redeploy) and rebuilt it under the same
+      // code; the in-flight game and roster are gone. Clear the stale roster
+      // (phones repopulate it as they reconnect) and drop back to the lobby.
+      if (recreated) {
+        this.players.clear();
+        this.inputs.clear();
+        this.pokerState = this.unoState = this.amongusState = this.rummyState = null;
+        this.events.emit('players_changed');
+        this.events.emit('room_recreated', roomCode);
+      }
     });
 
     this.socket.on('player_joined', (p) => {

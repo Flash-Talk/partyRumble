@@ -38,6 +38,21 @@ function registerHandlers(io, rooms) {
           }
           return;
         }
+
+        // Resume failed and the room is genuinely gone (e.g. the server
+        // restarted / redeployed, wiping in-memory rooms). Recreate it under the
+        // SAME code so phones still holding that code can reconnect instead of
+        // being dead-ended with "Room not found". The active game state is lost,
+        // so everyone returns to the lobby. (A code that still exists but with a
+        // mismatched token is an impostor — fall through to a fresh room.)
+        if (!rooms.getRoom(resumeCode)) {
+          const code = rooms.createRoom(socket.id, token, resumeCode);
+          socket.data.role = 'tv';
+          socket.data.roomCode = code;
+          socket.join(code);
+          socket.emit('room_created', { roomCode: code, recreated: code === resumeCode });
+          return;
+        }
       }
 
       // One room per TV socket; reuse if it already made one.

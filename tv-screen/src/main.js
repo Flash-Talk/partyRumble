@@ -30,6 +30,16 @@ const game = new Phaser.Game({
   scene: [BootScene, LobbyScene, GameScene, ResultScene, UnoScene, AmongUsScene, PokerScene, RummyScene],
 });
 
+// If the server rebuilt our room after a restart, the in-flight game is gone —
+// return whatever scene is running to the lobby so the TV shows the (same) code
+// and everyone can start fresh instead of staring at a frozen game.
+Net.events.on('room_recreated', () => {
+  for (const s of game.scene.getScenes(true)) {
+    if (s.scene.key !== 'LobbyScene') s.scene.stop();
+  }
+  if (!game.scene.isActive('LobbyScene')) game.scene.start('LobbyScene');
+});
+
 // Opt-in debug handles for automated smoke tests (only with ?debug in the URL).
 if (window.location.search.includes('debug')) {
   window.__game = game;
