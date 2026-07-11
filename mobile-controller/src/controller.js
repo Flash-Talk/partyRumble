@@ -533,8 +533,8 @@ function openTask(th) {
   currentTask = { kind: 'task', stationId: th.stationId };
   atArea.textContent = '';
   amongusTask.classList.add('show');
-  if (th.type === 'hold') startHoldTask();
-  else startTapTask();
+  if (th.type === 'wires') startWiresTask();
+  else startSequenceTask();
 }
 function openFix() {
   currentTask = { kind: 'fix' };
@@ -581,23 +581,82 @@ function startHoldTask() {
   window.addEventListener('mouseup', up);
 }
 
-function startTapTask() {
-  atTitle.textContent = 'Tap all the dots';
-  let remaining = 5;
-  for (let i = 0; i < 5; i++) {
-    const d = document.createElement('button');
-    d.className = 'task-dot';
-    const tap = (e) => {
-      if (e) e.preventDefault();
-      if (d.classList.contains('hit')) return;
-      d.classList.add('hit');
-      remaining -= 1;
-      if (remaining <= 0) completeCurrentTask();
-    };
-    d.addEventListener('touchstart', tap, { passive: false });
-    d.addEventListener('click', tap);
-    atArea.appendChild(d);
-  }
+function amShuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
+  return arr;
+}
+function amTap(el, fn) {
+  el.addEventListener('touchstart', (e) => { e.preventDefault(); fn(); }, { passive: false });
+  el.addEventListener('click', fn);
+}
+
+// Wiring task: connect each colored dot on the left to the same color on the right.
+function startWiresTask() {
+  atTitle.textContent = 'Connect the matching colors';
+  const COLORS = ['#ef4444', '#3b82f6', '#22c55e', '#eab308'];
+  const left = amShuffle(COLORS.slice());
+  const right = amShuffle(COLORS.slice());
+  const svgNS = 'http://www.w3.org/2000/svg';
+
+  const wrap = document.createElement('div'); wrap.className = 'wires-wrap';
+  const svg = document.createElementNS(svgNS, 'svg'); svg.setAttribute('class', 'wires-svg');
+  const colL = document.createElement('div'); colL.className = 'wires-col';
+  const colR = document.createElement('div'); colR.className = 'wires-col';
+  wrap.appendChild(svg); wrap.appendChild(colL); wrap.appendChild(colR);
+  atArea.appendChild(wrap);
+
+  const mkDot = (c) => { const d = document.createElement('button'); d.className = 'wire-dot'; d.style.background = c; d.dataset.color = c; return d; };
+  const lDots = left.map(mkDot); lDots.forEach((d) => colL.appendChild(d));
+  const rDots = right.map(mkDot); rDots.forEach((d) => colR.appendChild(d));
+
+  let sel = null, done = 0;
+  const clearSel = () => { if (sel) { sel.classList.remove('sel'); sel = null; } };
+  lDots.forEach((d) => amTap(d, () => { if (d.dataset.done) return; clearSel(); sel = d; d.classList.add('sel'); }));
+  rDots.forEach((d) => amTap(d, () => {
+    if (!sel || d.dataset.done) return;
+    if (d.dataset.color === sel.dataset.color) {
+      d.dataset.done = '1'; sel.dataset.done = '1';
+      d.classList.add('done'); sel.classList.add('done');
+      const wr = wrap.getBoundingClientRect(), ar = sel.getBoundingClientRect(), br = d.getBoundingClientRect();
+      const line = document.createElementNS(svgNS, 'line');
+      line.setAttribute('x1', ar.left + ar.width / 2 - wr.left); line.setAttribute('y1', ar.top + ar.height / 2 - wr.top);
+      line.setAttribute('x2', br.left + br.width / 2 - wr.left); line.setAttribute('y2', br.top + br.height / 2 - wr.top);
+      line.setAttribute('stroke', d.dataset.color); line.setAttribute('stroke-width', '10'); line.setAttribute('stroke-linecap', 'round');
+      svg.appendChild(line);
+      clearSel(); done += 1;
+      if (done >= COLORS.length) setTimeout(completeCurrentTask, 250);
+    } else { d.classList.add('err'); setTimeout(() => d.classList.remove('err'), 200); clearSel(); }
+  }));
+}
+
+// Sequence task: watch the pads flash, then repeat the order.
+function startSequenceTask() {
+  atTitle.textContent = 'Watch, then repeat';
+  const COLORS = ['#ef4444', '#3b82f6', '#22c55e', '#eab308'];
+  const grid = document.createElement('div'); grid.className = 'simon-grid';
+  const pads = COLORS.map((c) => { const p = document.createElement('button'); p.className = 'simon-pad'; p.style.background = c; p.style.color = c; return p; });
+  pads.forEach((p) => grid.appendChild(p));
+  atArea.appendChild(grid);
+
+  const seq = [];
+  for (let i = 0; i < 4; i++) seq.push(Math.floor(Math.random() * 4));
+  let inputIdx = 0, accepting = false;
+  const flash = (i, ms) => new Promise((res) => { pads[i].classList.add('lit'); setTimeout(() => { pads[i].classList.remove('lit'); setTimeout(res, 120); }, ms); });
+  const playSeq = async () => {
+    accepting = false; inputIdx = 0;
+    await new Promise((r) => setTimeout(r, 400));
+    for (const i of seq) { if (!currentTask) return; await flash(i, 380); }
+    accepting = true;
+  };
+  pads.forEach((p, i) => amTap(p, () => {
+    if (!accepting || !currentTask) return;
+    p.classList.add('lit'); setTimeout(() => p.classList.remove('lit'), 150);
+    if (i === seq[inputIdx]) {
+      inputIdx += 1;
+      if (inputIdx >= seq.length) { accepting = false; setTimeout(completeCurrentTask, 200); }
+    } else { accepting = false; playSeq(); }
+  }));
+  playSeq();
 }
 
 function renderMeeting(you) {

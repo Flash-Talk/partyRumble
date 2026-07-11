@@ -220,6 +220,18 @@
     .task-dot { width: 84px; height: 84px; border-radius: 50%; background: #eab308; border: 3px solid #fff; }
     .task-dot.hit { background: #4ade80; opacity: 0.45; }
 
+    .wires-wrap { position: relative; width: 300px; height: 300px; display: flex; justify-content: space-between; }
+    .wires-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .wires-col { display: flex; flex-direction: column; justify-content: space-between; z-index: 1; }
+    .wire-dot { width: 58px; height: 58px; border-radius: 50%; border: 3px solid #fff; }
+    .wire-dot.sel { box-shadow: 0 0 0 4px #fff; transform: scale(1.08); }
+    .wire-dot.done { opacity: 0.9; }
+    .wire-dot.err { outline: 3px solid #fff; outline-offset: 2px; }
+
+    .simon-grid { display: grid; grid-template-columns: repeat(2, 120px); gap: 16px; }
+    .simon-pad { width: 120px; height: 120px; border-radius: 18px; opacity: 0.5; border: none; }
+    .simon-pad.lit { opacity: 1; box-shadow: 0 0 34px currentColor; transform: scale(1.05); }
+
     #shootBtn.ventmode { background: #a855f7; box-shadow: 0 0 40px #a855f7; color: #fff; }
     #amongusVent {
       position: absolute; inset: 0; z-index: 26; display: none; flex-direction: column;

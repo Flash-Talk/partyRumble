@@ -1,54 +1,50 @@
 'use strict';
 
-// The Among Us map, in a 1840x1000 "map space" (fills the 1920x1080 TV with a
-// small margin). Two mid dividers with central doorways carve four rooms around
-// an open hub; obstacle blocks give cover. Characters are circles that collide
-// against the walls and the outer bounds.
+// The Among Us map, in a 2000x1150 "map space" (the TV scales it to fit). A
+// central hub connects four quadrant rooms via doorways, with partial dividers
+// and cover blocks carving more distinct areas. Characters are circles that
+// collide against the walls and outer bounds.
 
 const MAP = {
-  w: 1840,
-  h: 1000,
+  w: 2000,
+  h: 1150,
   walls: [
-    // horizontal mid divider (central doorway gap x: 760..1080)
-    { x: 40, y: 488, w: 720, h: 24 },
-    { x: 1080, y: 488, w: 720, h: 24 },
-    // vertical mid divider (central doorway gap y: 380..620)
-    { x: 908, y: 40, w: 24, h: 340 },
-    { x: 908, y: 620, w: 24, h: 340 },
-    // room cover blocks
-    { x: 250, y: 170, w: 180, h: 150 },
-    { x: 1410, y: 170, w: 180, h: 150 },
-    { x: 250, y: 680, w: 180, h: 150 },
-    { x: 1410, y: 680, w: 180, h: 150 },
-    // corridor nooks
-    { x: 600, y: 150, w: 24, h: 190 },
-    { x: 1216, y: 150, w: 24, h: 190 },
-    { x: 600, y: 660, w: 24, h: 190 },
-    { x: 1216, y: 660, w: 24, h: 190 },
+    // central "+" dividers (doorways: x 820..1180, y 435..715)
+    { x: 40, y: 563, w: 780, h: 24 }, { x: 1180, y: 563, w: 780, h: 24 },
+    { x: 988, y: 40, w: 24, h: 395 }, { x: 988, y: 715, w: 24, h: 395 },
+    // quadrant sub-dividers (partial — carve rooms without enclosing)
+    { x: 480, y: 40, w: 24, h: 300 }, { x: 1496, y: 40, w: 24, h: 300 },
+    { x: 480, y: 810, w: 24, h: 300 }, { x: 1496, y: 810, w: 24, h: 300 },
+    { x: 40, y: 300, w: 300, h: 24 }, { x: 1660, y: 300, w: 300, h: 24 },
+    { x: 40, y: 826, w: 300, h: 24 }, { x: 1660, y: 826, w: 300, h: 24 },
+    // cover blocks
+    { x: 640, y: 210, w: 180, h: 150 }, { x: 1180, y: 210, w: 180, h: 150 },
+    { x: 640, y: 790, w: 180, h: 150 }, { x: 1180, y: 790, w: 180, h: 150 },
   ],
   // Spawns cluster in the open central hub.
   spawns: [
-    { x: 840, y: 440 }, { x: 1000, y: 440 }, { x: 840, y: 560 }, { x: 1000, y: 560 },
-    { x: 920, y: 415 }, { x: 920, y: 585 }, { x: 800, y: 500 }, { x: 1040, y: 500 },
+    { x: 920, y: 500 }, { x: 1080, y: 500 }, { x: 920, y: 650 }, { x: 1080, y: 650 },
+    { x: 1000, y: 470 }, { x: 1000, y: 680 }, { x: 860, y: 575 }, { x: 1140, y: 575 },
   ],
-  // Task stations, spread through the rooms.
+  // Task stations, spread through the rooms (kept in reachable open areas).
   tasks: [
-    { id: 't1', x: 150, y: 110 }, { id: 't2', x: 1690, y: 110 },
-    { id: 't3', x: 150, y: 890 }, { id: 't4', x: 1690, y: 890 },
-    { id: 't5', x: 520, y: 410 }, { id: 't6', x: 1320, y: 410 },
-    { id: 't7', x: 520, y: 600 }, { id: 't8', x: 1320, y: 600 },
+    { id: 't1', x: 180, y: 150 }, { id: 't2', x: 1820, y: 150 },
+    { id: 't3', x: 180, y: 1000 }, { id: 't4', x: 1820, y: 1000 },
+    { id: 't5', x: 620, y: 470 }, { id: 't6', x: 1380, y: 470 },
+    { id: 't7', x: 620, y: 690 }, { id: 't8', x: 1380, y: 690 },
+    { id: 't9', x: 1000, y: 150 }, { id: 't10', x: 1000, y: 1000 },
   ],
-  // Vents (imposter-only). Each connects only to its adjacent neighbors.
+  // Vents (imposter-only). Each connects only to adjacent neighbors.
   vents: [
-    { id: 'v1', label: 'NW', x: 700, y: 330, to: ['v2', 'v3'] },
-    { id: 'v2', label: 'NE', x: 1140, y: 330, to: ['v1', 'v4'] },
-    { id: 'v3', label: 'SW', x: 700, y: 670, to: ['v1', 'v4'] },
-    { id: 'v4', label: 'SE', x: 1140, y: 670, to: ['v2', 'v3'] },
+    { id: 'v1', label: 'NW', x: 700, y: 460, to: ['v2', 'v3'] },
+    { id: 'v2', label: 'NE', x: 1300, y: 460, to: ['v1', 'v4'] },
+    { id: 'v3', label: 'SW', x: 700, y: 700, to: ['v1', 'v4'] },
+    { id: 'v4', label: 'SE', x: 1300, y: 700, to: ['v2', 'v3'] },
   ],
   // Sabotage fix stations.
   sab: {
-    reactor: { x: 700, y: 800 },
-    lights: { x: 1140, y: 200 },
+    reactor: { x: 700, y: 900 },
+    lights: { x: 1300, y: 260 },
   },
 };
 

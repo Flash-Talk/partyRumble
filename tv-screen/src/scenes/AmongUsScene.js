@@ -24,7 +24,8 @@ export default class AmongUsScene extends Phaser.Scene {
     this.sabObjs = [];
     this.mapDrawn = false;
     this.mx = 40;
-    this.my = 40;
+    this.my = 90;
+    this.scale = 1;
     this._prevAlive = {};
     this._prevPhase = 'play';
     this._prevVotes = 0;
@@ -64,34 +65,41 @@ export default class AmongUsScene extends Phaser.Scene {
     if (Net.amongusState) this.renderState(Net.amongusState);
   }
 
+  sx(x) { return this.mx + x * this.scale; }
+  sy(y) { return this.my + y * this.scale; }
+  sc(v) { return v * this.scale; }
+
   drawMap(map) {
     if (this.mapDrawn) return;
     this.mapDrawn = true;
-    this.mx = Math.round((DESIGN.W - map.w) / 2);
-    this.my = Math.round((DESIGN.H - map.h) / 2);
+    // Fit the map into the area below the title/task bar, centered.
+    const availW = DESIGN.W - 100;
+    const availH = DESIGN.H - 110;
+    this.scale = Math.min(availW / map.w, availH / map.h);
+    this.mx = Math.round((DESIGN.W - map.w * this.scale) / 2);
+    this.my = Math.round(96 + (availH - map.h * this.scale) / 2);
+
     const g = this.add.graphics().setDepth(0);
     g.fillStyle(0x141a2e, 1);
-    g.fillRoundedRect(this.mx, this.my, map.w, map.h, 26);
+    g.fillRoundedRect(this.mx, this.my, this.sc(map.w), this.sc(map.h), 26);
     g.lineStyle(3, 0x2b3560, 1);
-    g.strokeRoundedRect(this.mx, this.my, map.w, map.h, 26);
+    g.strokeRoundedRect(this.mx, this.my, this.sc(map.w), this.sc(map.h), 26);
     g.fillStyle(0x323d63, 1);
-    for (const w of map.walls) g.fillRoundedRect(this.mx + w.x, this.my + w.y, w.w, w.h, 8);
-    // task stations
+    for (const w of map.walls) g.fillRoundedRect(this.sx(w.x), this.sy(w.y), this.sc(w.w), this.sc(w.h), 8);
     for (const t of map.tasks || []) {
       g.fillStyle(0x3b466f, 1);
-      g.fillCircle(this.mx + t.x, this.my + t.y, 16);
+      g.fillCircle(this.sx(t.x), this.sy(t.y), this.sc(16));
       g.lineStyle(3, 0x64d2ff, 0.7);
-      g.strokeCircle(this.mx + t.x, this.my + t.y, 16);
+      g.strokeCircle(this.sx(t.x), this.sy(t.y), this.sc(16));
     }
-    // vents (grated covers)
     for (const v of map.vents || []) {
-      const vx = this.mx + v.x, vy = this.my + v.y;
+      const vx = this.sx(v.x), vy = this.sy(v.y);
       g.fillStyle(0x241826, 1);
-      g.fillRoundedRect(vx - 24, vy - 18, 48, 36, 7);
+      g.fillRoundedRect(vx - this.sc(24), vy - this.sc(18), this.sc(48), this.sc(36), 7);
       g.lineStyle(3, 0x6b3a5a, 1);
-      g.strokeRoundedRect(vx - 24, vy - 18, 48, 36, 7);
+      g.strokeRoundedRect(vx - this.sc(24), vy - this.sc(18), this.sc(48), this.sc(36), 7);
       g.lineStyle(2, 0x8a4a6a, 1);
-      for (let k = -1; k <= 1; k++) g.lineBetween(vx - 15, vy + k * 8, vx + 15, vy + k * 8);
+      for (let k = -1; k <= 1; k++) g.lineBetween(vx - this.sc(15), vy + this.sc(k * 8), vx + this.sc(15), vy + this.sc(k * 8));
     }
   }
 
@@ -137,7 +145,7 @@ export default class AmongUsScene extends Phaser.Scene {
     // audio + kill flash on a fresh death
     for (const p of state.players) {
       if (this._prevAlive[p.id] === undefined) this._prevAlive[p.id] = p.alive;
-      if (this._prevAlive[p.id] && !p.alive) { audio.sfx('kill'); this.killFlash(this.mx + p.x, this.my + p.y); }
+      if (this._prevAlive[p.id] && !p.alive) { audio.sfx('kill'); this.killFlash(this.sx(p.x), this.sy(p.y)); }
       this._prevAlive[p.id] = p.alive;
     }
     if (state.phase === 'meeting' && this._prevPhase !== 'meeting') audio.sfx('meeting');
@@ -153,8 +161,8 @@ export default class AmongUsScene extends Phaser.Scene {
     for (const p of state.players) {
       seen.add(p.id);
       let av = this.avatars.get(p.id);
-      if (!av) { av = this.makeAvatar(p.color); this.avatars.set(p.id, av); }
-      const sx = this.mx + p.x, sy = this.my + p.y;
+      if (!av) { av = this.makeAvatar(p.color); av.setScale(this.scale); this.avatars.set(p.id, av); }
+      const sx = this.sx(p.x), sy = this.sy(p.y);
 
       const dx = av.prevX === null ? 0 : sx - av.prevX;
       const dy = av.prevY === null ? 0 : sy - av.prevY;
@@ -192,7 +200,7 @@ export default class AmongUsScene extends Phaser.Scene {
   pushSab(o) { this.sabObjs.push(o); return o; }
 
   drawSab(s) {
-    const sx = this.mx + s.station.x, sy = this.my + s.station.y;
+    const sx = this.sx(s.station.x), sy = this.sy(s.station.y);
     if (s.type === 'lights') {
       this.pushSab(this.add.rectangle(DESIGN.W / 2, DESIGN.H / 2, DESIGN.W, DESIGN.H, 0x000000, 0.62).setDepth(16));
       this.pushSab(this.add.text(DESIGN.W / 2, 96, '💡 LIGHTS SABOTAGED — go fix them', {
@@ -205,8 +213,8 @@ export default class AmongUsScene extends Phaser.Scene {
         fontFamily: 'system-ui, sans-serif', fontSize: '48px', fontStyle: 'bold', color: '#ff3b3b',
       }).setOrigin(0.5).setDepth(48));
     }
-    this.pushSab(this.add.circle(sx, sy, 42, 0x000000, 0).setStrokeStyle(6, 0xffe066, 1).setDepth(48));
-    this.pushSab(this.add.text(sx, sy + 56, 'FIX HERE', {
+    this.pushSab(this.add.circle(sx, sy, this.sc(42), 0x000000, 0).setStrokeStyle(6, 0xffe066, 1).setDepth(48));
+    this.pushSab(this.add.text(sx, sy + this.sc(56), 'FIX HERE', {
       fontFamily: 'system-ui, sans-serif', fontSize: '24px', fontStyle: 'bold', color: '#ffe066',
     }).setOrigin(0.5).setDepth(48));
   }
