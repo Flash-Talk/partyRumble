@@ -52,6 +52,31 @@ test('a wild-rank card can also fill a gap as a joker (impure)', () => {
   assert.equal(r.pure, false);
 });
 
+test('a wild-joker card of a DIFFERENT suit can complete a sequence as a joker', () => {
+  // wild = 2: the off-suit 2h is a joker standing in for 7s → 5s 6s [7s]
+  const r = isValidSequence([c('5', 's'), c('6', 's'), c('2', 'h')], '2');
+  assert.equal(r.valid, true, 'off-suit wild joker should complete the run');
+  assert.equal(r.pure, false);
+});
+
+test('a printed joker of course completes a run regardless of suit', () => {
+  const r = isValidSequence([c('5', 's'), c('6', 's'), jk()], '10');
+  assert.equal(r.valid, true);
+  assert.equal(r.pure, false);
+});
+
+test('a full declaration using an off-suit wild joker is accepted', () => {
+  // wild = 2; one sequence is completed by the off-suit 2h joker.
+  const groups = [
+    [c('4', 's'), c('5', 's'), c('6', 's')],          // pure seq
+    [c('9', 'h'), c('10', 'h'), c('2', 'c')],         // impure seq: 2c joker as Jh
+    [c('K', 'c'), c('K', 'd'), c('K', 'h')],          // set
+    [c('7', 's'), c('7', 'd'), c('7', 'c'), c('7', 'h')], // set (4)
+  ];
+  const r = validateDeclaration(groups, '2');
+  assert.equal(r.valid, true, r.reason);
+});
+
 test('ace low and ace high runs, but no wrap-around', () => {
   assert.equal(isValidSequence([c('A', 's'), c('2', 's'), c('3', 's')], '10').valid, true);
   assert.equal(isValidSequence([c('Q', 's'), c('K', 's'), c('A', 's')], '10').valid, true);

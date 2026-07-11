@@ -45,19 +45,37 @@ function isValidSequence(cards, wildRank) {
   if (cards.length < 3) return { valid: false, pure: false };
   const printed = cards.filter((c) => c.joker);
   const others = cards.filter((c) => !c.joker);
-  if (others.length) {
-    const suit = others[0].suit;
-    if (others.some((c) => c.suit !== suit)) return { valid: false, pure: false };
-  }
-  // Wild-rank cards may be used as their natural card OR as a substitute joker.
+  // Wild-rank cards may be used as their natural card OR as a substitute joker
+  // (a joker can be any suit). Only the NATURAL cards of a run must share a suit.
   const wilds = others.filter((c) => c.rank === wildRank);
   const fixed = others.filter((c) => c.rank !== wildRank);
+  let fixedSuit = null;
+  if (fixed.length) {
+    fixedSuit = fixed[0].suit;
+    if (fixed.some((c) => c.suit !== fixedSuit)) return { valid: false, pure: false };
+  }
+
   const m = wilds.length;
   let valid = false; let pure = false;
   for (let mask = 0; mask < (1 << m); mask++) {
     const naturals = fixed.slice();
     let extraJokers = 0;
-    for (let i = 0; i < m; i++) { if (mask & (1 << i)) naturals.push(wilds[i]); else extraJokers++; }
+    let suitOk = true;
+    for (let i = 0; i < m; i++) {
+      if (mask & (1 << i)) {
+        // used as a natural card — it must belong to the run's suit
+        if (fixedSuit && wilds[i].suit !== fixedSuit) { suitOk = false; break; }
+        naturals.push(wilds[i]);
+      } else {
+        extraJokers += 1; // used as a joker — suit is irrelevant
+      }
+    }
+    if (!suitOk) continue;
+    // With no fixed cards, the wilds-as-natural define the suit; require one suit.
+    if (!fixedSuit && naturals.length > 1) {
+      const s0 = naturals[0].suit;
+      if (naturals.some((c) => c.suit !== s0)) continue;
+    }
     const res = runFeasible(naturals, printed.length + extraJokers);
     if (res.feasible) {
       valid = true;
