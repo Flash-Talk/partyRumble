@@ -2,6 +2,7 @@
 
 const uno = require('./unoService');
 const amongus = require('./amongusService');
+const poker = require('./pokerService');
 
 /**
  * Wire socket.io events to the RoomManager. The server relays controller input
@@ -79,6 +80,7 @@ function registerHandlers(io, rooms) {
       // Rejoined mid-round? Re-send the private game state their UI needs.
       if (room.unoGame) uno.resendHand(io, room, player.slot);
       if (room.amongus) amongus.resendRole(io, room, player.slot);
+      if (room.poker) poker.resendHole(io, room, player.slot);
     });
 
     // --- UNO: TV starts a round; players act -------------------------------
@@ -105,6 +107,19 @@ function registerHandlers(io, rooms) {
       if (socket.data.role !== 'player') return;
       const room = rooms.getRoom(socket.data.roomCode);
       if (room && room.amongus) amongus.handleAction(room, socket.data.slot, payload || {});
+    });
+
+    // --- Poker: TV starts the tournament; players bet -----------------------
+    socket.on('start_poker', () => {
+      if (socket.data.role !== 'tv') return;
+      const room = rooms.getRoom(socket.data.roomCode);
+      if (room) poker.startPoker(io, room);
+    });
+
+    socket.on('poker_action', (payload) => {
+      if (socket.data.role !== 'player') return;
+      const room = rooms.getRoom(socket.data.roomCode);
+      if (room && room.poker) poker.handlePokerAction(io, room, socket.data.slot, payload || {});
     });
 
     // --- Controller input --------------------------------------------------
