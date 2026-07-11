@@ -15,12 +15,13 @@ const SUITS = ['s', 'h', 'd', 'c']; // spades, hearts, diamonds, clubs
 const RANK_VALUE = RANKS.reduce((m, r, i) => { m[r] = i + 2; return m; }, {}); // 2..14
 
 /**
- * Build one or more standard 52-card decks. Ids are stable and unique across
- * decks (`d{deckIndex}-{rank}{suit}`), so multi-deck games can still dedupe.
- * @param {{decks?: number}} [opts]
- * @returns {{id:string, rank:string, suit:string}[]}
+ * Build one or more standard 52-card decks, optionally with printed jokers.
+ * Ids are stable and unique across decks (`d{deckIndex}-{rank}{suit}`), so
+ * multi-deck games can still dedupe. Printed jokers are `{ id, joker:true }`.
+ * @param {{decks?: number, jokers?: number}} [opts]
+ * @returns {{id:string, rank?:string, suit?:string, joker?:boolean}[]}
  */
-function buildStandardDeck({ decks = 1 } = {}) {
+function buildStandardDeck({ decks = 1, jokers = 0 } = {}) {
   const out = [];
   for (let d = 0; d < decks; d++) {
     for (const suit of SUITS) {
@@ -29,6 +30,7 @@ function buildStandardDeck({ decks = 1 } = {}) {
       }
     }
   }
+  for (let j = 0; j < jokers; j++) out.push({ id: `jk${j}`, joker: true });
   return out;
 }
 

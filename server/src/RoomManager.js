@@ -36,13 +36,16 @@ class RoomManager {
       players: new Map(),
       slotOwners: {},
       grace: new Map(),
-      currentGame: 'penalty', // 'penalty' | 'uno' | 'amongus' | 'poker'
+      currentGame: 'penalty', // 'penalty' | 'uno' | 'amongus' | 'poker' | 'rummy'
       unoGame: null,          // active UnoGame instance, if any
       amongus: null,          // active AmongUsGame instance, if any
       amongusLoop: null,      // its tick interval
       poker: null,            // active PokerGame instance, if any
       pokerTimers: null,      // { turn, hand } setTimeout handles
       pokerTurnEndsAt: null,  // epoch ms the current turn auto-acts
+      rummy: null,            // active RummyGame instance, if any
+      rummyTimers: null,      // { turn, deal } setTimeout handles
+      rummyTurnEndsAt: null,  // epoch ms the current turn auto-plays
     });
     return code;
   }
