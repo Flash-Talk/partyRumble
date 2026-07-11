@@ -7,6 +7,7 @@
 
 const { AmongUsGame } = require('./amongus/AmongUsGame');
 const { MAP } = require('./amongus/map');
+const { rosterSlots } = require('./roster');
 const config = require('./config');
 
 const TICK_MS = 50; // 20 Hz
@@ -48,7 +49,7 @@ function tick(io, room) {
 }
 
 function start(io, room) {
-  const slots = Object.keys(room.slotOwners).sort();
+  const slots = rosterSlots(room);
   if (slots.length < config.MIN_PLAYERS_AMONGUS) {
     io.to(room.tvSocketId).emit('amongus_error', { message: `Need at least ${config.MIN_PLAYERS_AMONGUS} players` });
     return;

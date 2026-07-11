@@ -5,6 +5,7 @@
 // hand to their own socket.
 
 const { UnoGame } = require('./uno/UnoGame');
+const { rosterSlots } = require('./roster');
 const config = require('./config');
 
 function slotInfo(room, slot) {
@@ -49,7 +50,7 @@ function broadcastUno(io, room) {
 }
 
 function startUno(io, room) {
-  const slots = Object.keys(room.slotOwners).sort();
+  const slots = rosterSlots(room);
   if (slots.length < config.MIN_PLAYERS_UNO) {
     io.to(room.tvSocketId).emit('uno_error', { message: 'Need at least 2 players' });
     return;

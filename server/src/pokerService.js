@@ -6,6 +6,7 @@
 // to the TV plus each player's private hole cards to their own socket.
 
 const { PokerGame } = require('./poker/PokerGame');
+const { rosterSlots } = require('./roster');
 const config = require('./config');
 
 const TURN_MS = 30_000; // auto-act after this so an idle phone never stalls the table
@@ -98,7 +99,7 @@ function onHandTimeout(io, room) {
 }
 
 function startPoker(io, room) {
-  const slots = Object.keys(room.slotOwners).sort();
+  const slots = rosterSlots(room);
   if (slots.length < config.MIN_PLAYERS_POKER) {
     io.to(room.tvSocketId).emit('poker_error', { message: `Need at least ${config.MIN_PLAYERS_POKER} players` });
     return;

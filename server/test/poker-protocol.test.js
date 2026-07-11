@@ -67,3 +67,40 @@ test('poker: start deals holes to phones + public state to TV, and a fold advanc
   assert.ok(st2.handResult, 'a hand result is reported');
   assert.ok(st2.handResult.winners.length >= 1);
 });
+
+// Regression: a player whose socket briefly dropped (so their slot is in grace,
+// not slotOwners) when the game starts must still be seated, and must receive
+// their hole cards when they reconnect — otherwise they are stuck on the joystick.
+test('poker: a player who is briefly disconnected at start still gets their cards on reconnect', async (t) => {
+  const ctx = await startServer();
+  t.after(() => stopServer(ctx));
+  const { tv, roomCode } = await makeTvWithRoom(ctx.port);
+  t.after(() => tv.close());
+
+  const p1 = await joinPlayer(ctx.port, roomCode, 'Ann');
+  const p2 = await joinPlayer(ctx.port, roomCode, 'Bob');
+  const p3 = await joinPlayer(ctx.port, roomCode, 'Cid');
+  t.after(() => { p1.close(); p2.close(); });
+
+  // Cid's phone drops just before the game starts (screen lock / wifi blip).
+  p3.close();
+  await new Promise((r) => setTimeout(r, 120)); // let the server process the disconnect → grace
+
+  tv.emit('start_poker');
+  await new Promise((r) => setTimeout(r, 60));
+
+  // Cid comes back and rejoins with the same name.
+  const p3b = connect(ctx.port);
+  t.after(() => p3b.close());
+  await once(p3b, 'connect');
+  const holePromise = Promise.race([
+    once(p3b, 'poker_hole'),
+    new Promise((resolve) => setTimeout(() => resolve(null), 1500)),
+  ]);
+  p3b.emit('join_room', { roomCode, playerName: 'Cid' });
+  await once(p3b, 'join_success');
+
+  const hole = await holePromise;
+  assert.ok(hole, 'Cid should receive poker_hole after reconnecting');
+  assert.equal(hole.hole.length, 2, 'Cid gets their two hole cards');
+});

@@ -5,6 +5,7 @@
 // pause, and broadcasts public state to the TV plus each player's private hand.
 
 const { RummyGame } = require('./rummy/RummyGame');
+const { rosterSlots } = require('./roster');
 const config = require('./config');
 
 const TURN_MS = 45_000; // auto-play a stalled seat so the table never hangs
@@ -97,7 +98,7 @@ function onDealTimeout(io, room) {
 }
 
 function startRummy(io, room) {
-  const slots = Object.keys(room.slotOwners).sort();
+  const slots = rosterSlots(room);
   if (slots.length < config.MIN_PLAYERS_RUMMY) {
     io.to(room.tvSocketId).emit('rummy_error', { message: `Need at least ${config.MIN_PLAYERS_RUMMY} players` });
     return;
