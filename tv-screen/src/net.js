@@ -74,6 +74,11 @@ class Net {
     this.pokerState = null;
     this.socket.on('poker_state', (state) => { this.pokerState = state; this.events.emit('poker_state', state); });
     this.socket.on('poker_over', (data) => { this.pokerState = null; this.events.emit('poker_over', data); });
+
+    // Rummy (server-authoritative): the TV renders the public table.
+    this.rummyState = null;
+    this.socket.on('rummy_state', (state) => { this.rummyState = state; this.events.emit('rummy_state', state); });
+    this.socket.on('rummy_over', (data) => { this.rummyState = null; this.events.emit('rummy_over', data); });
   }
 
   startUno() {
@@ -86,6 +91,10 @@ class Net {
 
   startPoker() {
     if (this.socket) this.socket.emit('start_poker');
+  }
+
+  startRummy() {
+    if (this.socket) this.socket.emit('start_rummy');
   }
 
   getInput(slot) {

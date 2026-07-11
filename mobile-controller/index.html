@@ -314,6 +314,42 @@
     .pr-quick { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
     .pr-quick button { padding: 12px 16px; font-size: 16px; font-weight: 800; border: none; border-radius: 12px; background: #263056; color: #eef1f7; }
     .pr-row { display: flex; gap: 12px; width: 100%; max-width: 340px; }
+
+    /* ---- Rummy (Indian Rummy) ---- */
+    #rummy { position: absolute; inset: 0; z-index: 17; display: none; flex-direction: column; background: var(--bg); }
+    #rummyTop { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: rgba(0,0,0,0.28); }
+    #rummyTurn { font-size: 18px; font-weight: 800; }
+    #rummyTurn.you { color: #4ade80; }
+    #rummyTurn.wait { color: #8b93a7; }
+    #rummyWild { font-size: 14px; color: #ffe08a; font-weight: 800; }
+    #rummyTimer { margin-left: auto; font-size: 15px; font-weight: 800; color: #ffe08a; }
+    #rummyDrawRow { flex: 0 0 auto; display: flex; gap: 10px; padding: 10px 14px 4px; }
+    #rummyGroups { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; padding: 6px 10px; max-height: 40%; overflow-y: auto; touch-action: pan-y; }
+    .rgroup { display: flex; flex-wrap: wrap; gap: 5px; padding: 6px; border: 1px dashed #2a557a; border-radius: 10px; background: rgba(30,60,90,0.25); }
+    .rglabel { font-size: 12px; color: #8fb7d6; align-self: center; margin-right: 4px; font-weight: 800; }
+    #rummyTrayLabel { font-size: 12px; color: #8b93a7; padding: 4px 12px 0; }
+    #rummyTray { flex: 1 1 auto; min-height: 40px; overflow-y: auto; touch-action: pan-y; display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 12px; align-content: flex-start; }
+    #rummyMsg { min-height: 20px; text-align: center; font-weight: 700; font-size: 14px; color: #8b93a7; padding: 2px 12px; }
+    #rummyMsg.err { color: #ff6b6b; }
+    #rummyMsg.good { color: #4ade80; }
+    #rummyActions { flex: 0 0 auto; display: flex; gap: 8px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); }
+    .rbtn { flex: 1; padding: 14px 6px; font-size: 15px; font-weight: 800; border: none; border-radius: 12px; background: #263056; color: #eef1f7; }
+    .rbtn:disabled { opacity: 0.35; }
+    .rbtn:active:not(:disabled) { transform: translateY(1px); filter: brightness(0.95); }
+    .rbtn.declare { background: #22c55e; color: #06331a; }
+
+    .rcard {
+      position: relative; width: 46px; height: 64px; background: #fff; color: #12131a; border-radius: 7px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      font-weight: 900; box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+    }
+    .rcard.red { color: #d1324a; }
+    .rc-rank { font-size: 15px; line-height: 1; }
+    .rc-suit { font-size: 20px; line-height: 1; }
+    .rcard.sel { outline: 3px solid #64d2ff; outline-offset: 1px; transform: translateY(-3px); }
+    .rcard.wild { box-shadow: 0 0 0 2px #ffe08a, 0 2px 5px rgba(0,0,0,0.4); }
+    .rcard.drawn { box-shadow: 0 0 0 2px #4ade80, 0 2px 8px rgba(74,222,128,0.5); }
+    .rc-wild { position: absolute; top: -6px; right: -6px; background: #ffe08a; color: #3a2a06; font-size: 9px; font-weight: 900; border-radius: 6px; padding: 0 3px; }
   </style>
 </head>
 <body>
@@ -460,6 +496,29 @@
         <button id="prCancel" class="pbtn">Cancel</button>
         <button id="prConfirm" class="pbtn raise">CONFIRM</button>
       </div>
+    </div>
+  </section>
+
+  <!-- Rummy (Indian Rummy) UI (shown only during a rummy game) -->
+  <section id="rummy">
+    <div id="rummyTop">
+      <span id="rummyTurn">—</span>
+      <span id="rummyWild"></span>
+      <span id="rummyTimer"></span>
+    </div>
+    <div id="rummyDrawRow">
+      <button id="rummyStock" class="rbtn">DRAW STOCK</button>
+      <button id="rummyTake" class="rbtn">TAKE DISCARD</button>
+    </div>
+    <div id="rummyGroups"></div>
+    <div id="rummyTrayLabel">Ungrouped — tap cards to select</div>
+    <div id="rummyTray"></div>
+    <div id="rummyMsg"></div>
+    <div id="rummyActions">
+      <button id="rummyGroup" class="rbtn">GROUP</button>
+      <button id="rummyUngroup" class="rbtn">UNGROUP</button>
+      <button id="rummyDiscard" class="rbtn">DISCARD</button>
+      <button id="rummyDeclare" class="rbtn declare">DECLARE</button>
     </div>
   </section>
 

@@ -45,6 +45,19 @@ your two hole cards, the board, and the pot, with **FOLD / CHECK · CALL / RAISE
 auto-checked-or-folded after 30s so the table never stalls. Server-authoritative
 — your hole cards never touch the TV until showdown.
 
+### 🂡 Rummy (13-card Indian Rummy, 2–6 players)
+13-card Indian Rummy with jokers, played as a **points-pool** tournament: each
+deal the losers pick up **deadwood** points and whoever crosses **101** is
+knocked out — the last player standing wins. The **TV** shows the **wild-joker**
+card (that rank is wild), the closed stock and open discard, and each seat's
+card count and running pool score. On your **phone** you **draw** from the stock
+or the discard, **arrange** your cards into groups (runs and sets — tap to
+select, GROUP to bind), then **discard** to end your turn or **DECLARE** by
+leaving one card out and grouping the other 13. A declaration needs **two
+sequences, at least one pure**; the server validates it and scores everyone's
+deadwood (a hand with no pure sequence takes full count, capped at 80). An idle
+seat is auto-played after 45s.
+
 > **Sound:** the TV synthesizes music + SFX (no audio files). Browsers block
 > autoplay, so **press a key or tap the TV once** to enable sound.
 

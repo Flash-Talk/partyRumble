@@ -911,5 +911,201 @@ bindTap(prConfirm, () => {
 });
 bindTap(prCancel, () => { pokerRaisePicker.classList.remove('show'); });
 
+// ---- Rummy (Indian Rummy) ----
+const rummyEl = $('rummy');
+const rummyTurn = $('rummyTurn');
+const rummyWild = $('rummyWild');
+const rummyTimer = $('rummyTimer');
+const rummyStock = $('rummyStock');
+const rummyTake = $('rummyTake');
+const rummyGroupsEl = $('rummyGroups');
+const rummyTrayEl = $('rummyTray');
+const rummyMsg = $('rummyMsg');
+const rummyGroupBtn = $('rummyGroup');
+const rummyUngroupBtn = $('rummyUngroup');
+const rummyDiscardBtn = $('rummyDiscard');
+const rummyDeclareBtn = $('rummyDeclare');
+
+const RUMMY_SUIT = { s: '♠', h: '♥', d: '♦', c: '♣' };
+const RANK_ORDER = { 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, J: 11, Q: 12, K: 13, A: 14 };
+const rummyShort = (card) => (card ? (card.joker ? 'JOKER' : card.rank + RUMMY_SUIT[card.suit]) : '');
+
+let rummyActive = false;
+let rummyYou = null;          // latest rummy_hand
+let rummyTimerLoop = null;
+let rummyGroups = [];         // array of arrays of card ids (the player's grouping)
+let rummySelected = new Set();
+
+socket.on('rummy_hand', (h) => enterRummy(h));
+socket.on('rummy_over', () => exitRummy());
+socket.on('rummy_error', ({ message }) => {
+  rummyMsg.textContent = message || '';
+  rummyMsg.className = 'err';
+  setTimeout(() => { if (rummyMsg.textContent === message) { rummyMsg.textContent = ''; rummyMsg.className = ''; } }, 2000);
+});
+
+function enterRummy(h) {
+  rummyActive = true;
+  joinEl.style.display = 'none';
+  controllerEl.style.display = 'none';
+  unoEl.style.display = 'none';
+  pokerEl.style.display = 'none';
+  rummyEl.style.display = 'flex';
+  if (!rummyTimerLoop) rummyTimerLoop = setInterval(updateRummyTimer, 250);
+  renderRummy(h);
+}
+
+function exitRummy() {
+  rummyActive = false;
+  rummyYou = null;
+  rummyGroups = [];
+  rummySelected.clear();
+  if (rummyTimerLoop) { clearInterval(rummyTimerLoop); rummyTimerLoop = null; }
+  rummyEl.style.display = 'none';
+  controllerEl.style.display = 'flex';
+}
+
+function rummyName(state, slot) {
+  const p = state.players.find((x) => x.slot === slot);
+  return p ? p.name : '…';
+}
+function rummyCardCmp(a, b) {
+  if (a.joker) return 1; if (b.joker) return -1;
+  if (a.suit !== b.suit) return a.suit < b.suit ? -1 : 1;
+  return RANK_ORDER[a.rank] - RANK_ORDER[b.rank];
+}
+
+function rummyTile(card, h) {
+  const el = document.createElement('div');
+  const wild = card.joker || card.rank === h.wildRank;
+  el.className = 'rcard'
+    + ((card.suit === 'h' || card.suit === 'd') ? ' red' : '')
+    + (wild ? ' wild' : '')
+    + (rummySelected.has(card.id) ? ' sel' : '')
+    + (card.id === h.drawnCardId ? ' drawn' : '');
+  if (card.joker) {
+    const s = document.createElement('span'); s.className = 'rc-suit'; s.textContent = '🃏'; el.appendChild(s);
+  } else {
+    const r = document.createElement('span'); r.className = 'rc-rank'; r.textContent = card.rank;
+    const s = document.createElement('span'); s.className = 'rc-suit'; s.textContent = RUMMY_SUIT[card.suit];
+    el.appendChild(r); el.appendChild(s);
+    if (wild) { const w = document.createElement('span'); w.className = 'rc-wild'; w.textContent = 'J'; el.appendChild(w); }
+  }
+  const tap = (e) => {
+    if (e) e.preventDefault();
+    if (rummySelected.has(card.id)) rummySelected.delete(card.id); else rummySelected.add(card.id);
+    renderRummy(rummyYou);
+  };
+  el.addEventListener('touchstart', tap, { passive: false });
+  el.addEventListener('click', tap);
+  return el;
+}
+
+function renderRummy(h) {
+  rummyYou = h;
+  const st = h.state;
+  if (!st) return;
+  const handIds = new Set(h.cards.map((c) => c.id));
+  const byId = new Map(h.cards.map((c) => [c.id, c]));
+
+  // Reconcile the persisted grouping with the current hand (draws/discards/new deals).
+  rummyGroups = rummyGroups.map((g) => g.filter((id) => handIds.has(id))).filter((g) => g.length > 0);
+  for (const id of [...rummySelected]) if (!handIds.has(id)) rummySelected.delete(id);
+  const grouped = new Set(rummyGroups.flat());
+  const ungrouped = h.cards.filter((c) => !grouped.has(c.id));
+
+  const yourTurn = h.yourTurn;
+  rummyTurn.textContent = yourTurn
+    ? (h.phase === 'draw' ? 'YOUR TURN — draw' : 'YOUR TURN — discard or declare')
+    : (st.turn ? `Waiting for ${rummyName(st, st.turn)}…` : (st.phase === 'dealover' ? 'Deal over' : '…'));
+  rummyTurn.className = yourTurn ? 'you' : 'wait';
+  rummyWild.textContent = `Wild: ${st.wildRank || '—'}`;
+
+  rummyStock.disabled = !h.canDrawStock;
+  rummyTake.disabled = !h.canDrawDiscard;
+  rummyTake.textContent = h.discardTop ? `TAKE ${rummyShort(h.discardTop)}` : 'TAKE DISCARD';
+
+  // Groups.
+  rummyGroupsEl.innerHTML = '';
+  rummyGroups.forEach((g, gi) => {
+    const row = document.createElement('div'); row.className = 'rgroup';
+    const lbl = document.createElement('span'); lbl.className = 'rglabel'; lbl.textContent = `G${gi + 1}`;
+    row.appendChild(lbl);
+    g.forEach((id) => { const card = byId.get(id); if (card) row.appendChild(rummyTile(card, h)); });
+    rummyGroupsEl.appendChild(row);
+  });
+
+  // Ungrouped tray (sorted for readability).
+  rummyTrayEl.innerHTML = '';
+  ungrouped.slice().sort(rummyCardCmp).forEach((card) => rummyTrayEl.appendChild(rummyTile(card, h)));
+
+  rummyGroupBtn.disabled = !(yourTurn && rummySelected.size >= 1);
+  rummyUngroupBtn.disabled = !(yourTurn && rummySelected.size >= 1);
+  rummyDiscardBtn.disabled = !(h.canDiscard && rummySelected.size === 1);
+  rummyDeclareBtn.disabled = !h.canDeclare;
+
+  let msg = '';
+  if (st.phase === 'dealover' && st.lastDeal) {
+    const d = st.lastDeal;
+    const mine = d.scores[mySlot];
+    msg = d.declarer === mySlot ? 'You declared and won the deal!' : `${rummyName(st, d.declarer)} declared. You +${mine == null ? 0 : mine}.`;
+    rummyMsg.className = '';
+  } else if (yourTurn && h.phase === 'discard') {
+    msg = `Select 1 to discard — or leave exactly one card ungrouped and tap DECLARE (${ungrouped.length} ungrouped)`;
+    rummyMsg.className = '';
+  } else if (yourTurn && h.phase === 'draw') {
+    msg = 'Draw from the stock or take the discard';
+    rummyMsg.className = '';
+  } else {
+    rummyMsg.className = '';
+  }
+  rummyMsg.textContent = msg;
+
+  updateRummyTimer();
+}
+
+function updateRummyTimer() {
+  if (!rummyActive || !rummyYou || !rummyYou.state) { rummyTimer.textContent = ''; return; }
+  const ends = rummyYou.state.turnEndsAt;
+  if (!ends) { rummyTimer.textContent = ''; return; }
+  const rem = Math.max(0, Math.ceil((ends - Date.now()) / 1000));
+  rummyTimer.textContent = `⏱ ${rem}s`;
+}
+
+bindTap(rummyStock, () => { if (!rummyStock.disabled) socket.emit('rummy_action', { action: 'draw', source: 'stock' }); });
+bindTap(rummyTake, () => { if (!rummyTake.disabled) socket.emit('rummy_action', { action: 'draw', source: 'discard' }); });
+
+bindTap(rummyGroupBtn, () => {
+  if (rummyGroupBtn.disabled) return;
+  const sel = [...rummySelected];
+  rummyGroups = rummyGroups.map((g) => g.filter((id) => !rummySelected.has(id))).filter((g) => g.length > 0);
+  rummyGroups.push(sel);
+  rummySelected.clear();
+  renderRummy(rummyYou);
+});
+bindTap(rummyUngroupBtn, () => {
+  if (rummyUngroupBtn.disabled) return;
+  rummyGroups = rummyGroups.map((g) => g.filter((id) => !rummySelected.has(id))).filter((g) => g.length > 0);
+  rummySelected.clear();
+  renderRummy(rummyYou);
+});
+bindTap(rummyDiscardBtn, () => {
+  if (rummyDiscardBtn.disabled) return;
+  const id = [...rummySelected][0];
+  rummySelected.clear();
+  socket.emit('rummy_action', { action: 'discard', cardId: id });
+});
+bindTap(rummyDeclareBtn, () => {
+  if (rummyDeclareBtn.disabled || !rummyYou) return;
+  const grouped = new Set(rummyGroups.flat());
+  const ungrouped = rummyYou.cards.filter((c) => !grouped.has(c.id)).map((c) => c.id);
+  if (ungrouped.length !== 1) {
+    rummyMsg.textContent = 'Leave exactly one card ungrouped as your discard';
+    rummyMsg.className = 'err';
+    return;
+  }
+  socket.emit('rummy_action', { action: 'declare', discardId: ungrouped[0], groups: rummyGroups });
+});
+
 // ---- boot ----
 initJoinScreen();
